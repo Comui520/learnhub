@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: learnhub
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
