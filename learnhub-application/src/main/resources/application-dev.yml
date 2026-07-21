@@ -1,0 +1,15 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: learnhub
+
+logging:
+  level:
+    com.github.comui520.learnhub: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
