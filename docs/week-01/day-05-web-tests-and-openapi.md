@@ -157,6 +157,262 @@ given(greetingService.greet("forbidden"))
 
 Mock 不是万能的。Mock 太多会让测试只验证“自己编排的假世界”，所以后续仍需要少量真实集成测试。
 
+### 4.1 先别用 Spring：亲手理解“替身”
+
+你的 `DemoController` 依赖 `GreetingService`：
+
+```java
+public class DemoController {
+    private final GreetingService greetingService;
+
+    public DemoController(GreetingService greetingService) {
+        this.greetingService = greetingService;
+    }
+}
+```
+
+构造器只要求得到一个 `GreetingService` 对象。正常运行时，Spring 给它真实的 `GreetingService` Bean；测试 Controller 时，我们可以给它一个受测试控制的替身。
+
+先假设 `GreetingService` 是接口，可以手写替身：
+
+```java
+class FixedGreetingService implements GreetingService {
+    @Override
+    public GreetingResponse greet(String name) {
+        return new GreetingResponse("固定的测试结果");
+    }
+}
+```
+
+然后：
+
+```java
+GreetingService fakeService = new FixedGreetingService();
+DemoController controller = new DemoController(fakeService);
+```
+
+Controller 并不知道拿到的是生产实现还是测试替身；它只会调用 `greet`。这就是依赖注入方便测试的原因。
+
+你当前的 `GreetingService` 是具体 class，不是接口，也没关系。Mockito 能在测试运行时生成一个行为像该 class 的替身对象。
+
+### 4.2 Mockito 到底做了哪三件事
+
+Mockito 的核心只有三件事：
+
+1. 创建 Mock。
+2. 规定调用 Mock 时返回什么或抛什么。
+3. 事后检查 Mock 是否按预期被调用。
+
+纯 Mockito 示例：
+
+```java
+GreetingService greetingService = Mockito.mock(GreetingService.class);
+
+given(greetingService.greet("LearnHub"))
+        .willReturn(new GreetingResponse("Hello, LearnHub!"));
+
+GreetingResponse result = greetingService.greet("LearnHub");
+
+assertThat(result.greeting()).isEqualTo("Hello, LearnHub!");
+verify(greetingService).greet("LearnHub");
+```
+
+逐行解释：
+
+```java
+Mockito.mock(GreetingService.class)
+```
+
+创建一个假的 `GreetingService`。它不是你写的真实 `GreetingService`，因此真实的 `trim`、`if` 和拼接逻辑不会运行。
+
+```java
+given(greetingService.greet("LearnHub"))
+        .willReturn(new GreetingResponse("Hello, LearnHub!"));
+```
+
+这叫 **stubbing（设桩）**：规定“当这个 Mock 收到参数 LearnHub 时，返回指定结果”。它不是在这里真正执行生产业务。
+
+```java
+verify(greetingService).greet("LearnHub");
+```
+
+这是交互验证：检查从创建 Mock 到现在，是否真的发生过这次调用。Mockito 会记录 Mock 收到的方法名和参数。
+
+### 4.3 没有设桩时会怎样
+
+Mock 不会自动执行真实方法。没有设桩时，Mockito 通常返回类型默认值：
+
+| 返回类型 | 默认值 |
+|---|---|
+| 对象 | `null` |
+| `boolean` | `false` |
+| `int`、`long` 等数字 | `0` |
+| 集合（现代 Mockito 常见情况） | 空集合 |
+
+因此：
+
+```java
+GreetingService service = mock(GreetingService.class);
+GreetingResponse response = service.greet("LearnHub");
+```
+
+`response` 很可能是 null。随后调用 `response.greeting()` 就会抛 `NullPointerException`。Controller 成功测试必须设桩，是因为 Controller 后面确实使用了 Service 返回值。
+
+### 4.4 为什么 Controller 测试不用真实 Service
+
+Day 5 是有意把两个问题拆开：
+
+```text
+DemoGreetingServiceTest
+  验证真实 Service：trim、forbidden、问候语拼接
+
+DemoControllerTest
+  验证 Web 边界：URL、POST、JSON、Validation、状态码、响应 JSON、Advice
+```
+
+如果 Controller 测试也使用真实 Service，测试失败时可能是 Controller、Validation、Advice 或 Service 中任意一个出错，定位范围更大。Mock 让我们精确控制 Service 的结果，只观察 Controller 层怎样应对。
+
+这不代表项目永远不测试它们的真实组合。后续还会有集成测试。测试分层的目标是让不同测试回答不同问题。
+
+### 4.5 一个不启动 Spring 的 Controller + Mockito 实验
+
+先创建一个临时学习测试，理解后可以保留或删除：
+
+```java
+package com.github.comui520.learnhub.demo;
+
+import com.github.comui520.learnhub.common.api.ApiResponse;
+import com.github.comui520.learnhub.demo.dto.GreetingRequest;
+import com.github.comui520.learnhub.demo.dto.GreetingResponse;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+
+class DemoControllerMockitoLearningTest {
+
+    @Test
+    void shouldUseTheResultProvidedByMockService() {
+        // Arrange：创建 Mock，并规定它的行为
+        GreetingService service = mock(GreetingService.class);
+        given(service.greet("LearnHub"))
+                .willReturn(new GreetingResponse("来自 Mock 的结果"));
+
+        DemoController controller = new DemoController(service);
+        GreetingRequest request = new GreetingRequest("LearnHub");
+
+        // Act：直接调用普通 Java 方法，没有 HTTP、JSON 和 Validation
+        ApiResponse<String> response = controller.greet(request);
+
+        // Assert：Controller 使用了 Mock 提供的返回值
+        assertThat(response.data()).isEqualTo("来自 Mock 的结果");
+        verify(service).greet("LearnHub");
+    }
+}
+```
+
+这个实验特别重要：直接调用 `controller.greet(request)` 时，`@Valid` 不会生效，因为没有经过 Spring MVC。注解只是元数据，需要 MVC 在请求流程中读取它。
+
+因此，这个纯 Mockito 测试能检查 Controller 的普通 Java 协作，但不能检查 URL、JSON 或 Validation。检查这些需要 MockMvc。
+
+### 4.6 `@MockitoBean` 不是普通 Mockito 注解
+
+在 Web 测试中：
+
+```java
+@MockitoBean
+private GreetingService greetingService;
+```
+
+它由 Spring Test 提供，做两件事：
+
+1. 使用 Mockito 创建 `GreetingService` Mock。
+2. 把这个 Mock 注册进测试用 Spring 容器。
+
+随后 Spring 创建 `DemoController` 时，构造器拿到的是这个 Mock：
+
+```text
+测试 Spring 容器
+├── DemoController
+├── GlobalExceptionHandler
+└── GreetingService Mock  ← @MockitoBean 创建
+```
+
+`@WebMvcTest` 不会加载普通 `@Service` Bean，所以必须提供 Controller 所需的依赖。`@MockitoBean` 正好提供可控制的测试依赖。
+
+### 4.7 `given`、`willReturn`、`willThrow` 和 `verify`
+
+成功场景：
+
+```java
+given(greetingService.greet("LearnHub"))
+        .willReturn(new GreetingResponse("Hello, LearnHub!"));
+```
+
+业务错误场景：
+
+```java
+given(greetingService.greet("forbidden"))
+        .willThrow(new BusinessException(DemoErrorCode.NAME_FORBIDDEN));
+```
+
+验证调用一次：
+
+```java
+verify(greetingService).greet("LearnHub");
+```
+
+更明确写一次：
+
+```java
+verify(greetingService, times(1)).greet("LearnHub");
+```
+
+验证完全没有调用：
+
+```java
+verifyNoInteractions(greetingService);
+```
+
+空 name 请求应该在 Validation 阶段失败，所以 Service 完全不应收到调用。这条验证证明了请求确实停在业务层之前。
+
+### 4.8 参数必须匹配
+
+下面只为精确的 `LearnHub` 设桩：
+
+```java
+given(greetingService.greet("LearnHub"))
+        .willReturn(...);
+```
+
+如果 Controller 实际调用：
+
+```java
+greetingService.greet("learnhub")
+```
+
+这个设桩不匹配，Mock 会返回默认 null。需要接受任意字符串时可以写：
+
+```java
+given(greetingService.greet(anyString()))
+        .willReturn(...);
+```
+
+但初学阶段优先使用精确参数，因为测试契约更清晰。`anyString()` 会放宽测试，可能掩盖 Controller 传错参数。
+
+### 4.9 Mock、Stub、Fake、Spy 简单区别
+
+| 名称 | 含义 | 本课是否重点使用 |
+|---|---|---|
+| Stub | 预先规定输入对应输出的替身 | `given(...).willReturn(...)` |
+| Mock | 可设桩并记录/验证交互的动态替身 | 是 |
+| Fake | 手写、能工作的简化实现，如内存仓库 | 后续会用 |
+| Spy | 包装真实对象，默认执行真实方法，可局部替换 | 暂不使用 |
+
+Mockito 创建的对象通常统称 Mock；当你只规定返回值时，它承担 Stub 的角色。不要被术语阻塞，先掌握“替身、设定行为、检查调用”。
+
 ---
 
 ## 5. 创建 Controller 测试
@@ -176,7 +432,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.comui520.learnhub.common.exception.BusinessException;
 import com.github.comui520.learnhub.demo.dto.GreetingRequest;
 import com.github.comui520.learnhub.demo.dto.GreetingResponse;
-import com.github.comui520.learnhub.web.advice.GlobalExceptionHandler;
+import com.github.comui520.learnhub.web.service.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -204,7 +460,7 @@ class DemoControllerTest {
     private ObjectMapper objectMapper;
 
     @MockitoBean
-    private DemoGreetingService greetingService;
+    private GreetingService greetingService;
 
     @Test
     void shouldReturnGreetingWhenRequestIsValid() throws Exception {
@@ -218,8 +474,8 @@ class DemoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("COMMON_0000"))
-                .andExpect(jsonPath("$.message").value("success"))
-                .andExpect(jsonPath("$.data.greeting").value("Hello, LearnHub!"))
+                .andExpect(jsonPath("$.message").value("SUCCESS"))
+                .andExpect(jsonPath("$.data").value("Hello, LearnHub!"))
                 .andExpect(jsonPath("$.timestamp").exists());
 
         verify(greetingService).greet("LearnHub");
@@ -235,7 +491,7 @@ class DemoControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON_0400"))
                 .andExpect(jsonPath("$.data[0].field").value("name"))
-                .andExpect(jsonPath("$.data[0].message").value("name 不能为空"));
+                .andExpect(jsonPath("$.data[0].message").value("Name should not be blank"));
 
         verifyNoInteractions(greetingService);
     }
@@ -250,8 +506,8 @@ class DemoControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.code").value("DEMO_0422"))
-                .andExpect(jsonPath("$.message").value("该名称不允许用于问候"))
+                .andExpect(jsonPath("$.code").value("DEMO_ERROR_0422"))
+                .andExpect(jsonPath("$.message").value("Name is forbidden"))
                 .andExpect(jsonPath("$.data").isEmpty());
 
         verify(greetingService).greet("forbidden");
@@ -362,7 +618,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 class DemoGreetingServiceTest {
 
-    private final DemoGreetingService service = new DemoGreetingService();
+    private final GreetingService service = new GreetingService();
 
     @Test
     void shouldReturnNormalizedGreetingWhenNameIsValid() {
@@ -379,7 +635,7 @@ class DemoGreetingServiceTest {
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(DemoErrorCode.NAME_FORBIDDEN);
-        assertThat(exception.getMessage()).isEqualTo("该名称不允许用于问候");
+        assertThat(exception.getMessage()).isEqualTo("Name is forbidden");
     }
 }
 ```
@@ -626,4 +882,3 @@ mvn -pl learnhub-application dependency:tree "-Dincludes=org.springdoc"
 10. **为什么 Swagger 不能代替测试？** 它主要描述和手工调用接口，不会在每次构建中自动验证所有分支。
 
 完成后交给老师：两个测试类、Maven 测试摘要、一次故意失败的关键输出、Swagger UI 中的接口结果，以及十道题自己的答案。
-

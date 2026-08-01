@@ -1,16 +1,15 @@
-package com.github.comui520.learnhub.common.exception;
+package com.github.comui520.learnhub.demo;
 
-public enum CommonErrorCode implements ErrorCode {
-    SUCCESS("COMMON_0000", "SUCCESS", 200),
-    INVALID_PARAMETER("COMMON_0400", "INVALID_PARAMETER", 400),
-    INTERNAL_ERROR("COMMON_0500", "INTERNAL_ERROR", 500),
+import com.github.comui520.learnhub.common.exception.ErrorCode;
+
+public enum DemoErrorCode implements ErrorCode {
+    NAME_FORBIDDEN("DEMO_ERROR_0422", "Name is forbidden", 422),
     ;
-
     private final String code;
     private final String message;
     private final Integer httpStatus;
 
-    CommonErrorCode(String code, String message, Integer httpStatus) {
+    DemoErrorCode(String code, String message, Integer httpStatus) {
         this.code = code;
         this.message = message;
         this.httpStatus = httpStatus;
