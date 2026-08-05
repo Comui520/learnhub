@@ -1,137 +1,467 @@
-# Day 6：把外部服务装进可重复环境——Docker Compose 与配置管理
+# Day 6：从 Docker 命令到 Docker Compose——为 LearnHub 准备本地开发环境
 
-## 0. 今天到底要学会什么
-
-LearnHub 后续需要 MySQL、Redis、RabbitMQ、MinIO 和 Qdrant。如果全部手工安装到 Windows，不同版本、端口和数据目录很容易混乱。今天用 Docker Compose 把开发环境写成一份可以重复执行的文件。
-
-完成后，你应该能够：
-
-1. 分清镜像、容器、端口映射、数据卷和网络。
-2. 知道宿主机地址和容器内地址为什么不同。
-3. 看懂并运行完整 `compose.yaml`。
-4. 使用 `.env.example` 与 `.env` 管理本地参数。
-5. 启动、查看、停止五个服务而不误删数据。
-6. 使用 `ps`、`logs`、健康检查定位常见故障。
-7. 理解 Compose 的 `.env` 不会自动成为 Spring Boot 环境变量。
-
-预计时间：6～8 小时。第一次下载镜像会受网络速度影响。
+> 这不是一份“把下面的 YAML 复制进去然后运行”的说明书。今天的目标是：你能看懂 Compose 在替你做什么，能自己判断某个服务为什么连不上、数据为什么还在或为什么丢了。
+>
+> 今天先不让 Spring Boot 连接数据库。我们先把“外部服务如何被启动和管理”这件事学明白。第二周才会把 MySQL 接入 Java 项目。
 
 ---
 
-## 1. Docker 的五个基础概念
+## 0. 开始前：你现在的 Docker 状态
 
-### 1.1 镜像 Image
-
-镜像是应用和运行环境的只读模板。例如：
+你之前的 Docker Desktop 报过：
 
 ```text
-mysql:8.4
+Virtualization support not detected
 ```
 
-表示 MySQL 官方镜像的 8.4 标签。镜像类似“安装包 + 预配置文件系统”，但它本身不是正在运行的进程。
+我们已经检查过电脑：硬件虚拟化是正常的，但 WSL 还没有正确安装。因此**先完成下面的前置条件，再做本课的实际操作**；否则每一个 Docker 命令都会失败，这不是你的 Compose 写错了。
 
-### 1.2 容器 Container
+用“管理员身份”打开 PowerShell，运行：
 
-容器是镜像的一次运行实例。一个 MySQL 镜像可以启动多个容器，只要端口和数据目录不冲突。
-
-容器有自己的文件系统和网络空间。删除容器后，容器内部未挂载的数据通常会丢失。
-
-### 1.3 端口映射
-
-```yaml
-ports:
-  - "3306:3306"
+```powershell
+wsl --install
 ```
 
-格式：
-
-```text
-宿主机端口:容器端口
-```
-
-左边 3306 是 Windows 上访问的端口，右边 3306 是 MySQL 在容器内监听的端口。
-
-如果 Windows 已安装 MySQL 占用 3306，可以改成：
-
-```yaml
-- "3307:3306"
-```
-
-此时宿主机 Spring Boot 访问 `localhost:3307`，容器内其他服务仍访问 `mysql:3306`。
-
-### 1.4 数据卷 Volume
-
-```yaml
-volumes:
-  - mysql-data:/var/lib/mysql
-```
-
-左边是 Docker 管理的命名卷，右边是容器中的数据目录。容器删除再重建，命名卷仍可保留数据。
-
-### 1.5 Compose 网络与服务名
-
-Compose 默认给同一项目的服务创建内部网络。服务名会成为 DNS 名：
-
-```text
-mysql:3306
-redis:6379
-rabbitmq:5672
-```
-
-两种视角：
-
-| Spring Boot 运行位置 | MySQL 地址 |
-|---|---|
-| 直接运行在 Windows | `localhost:3306` |
-| 以后也运行在 Compose 容器 | `mysql:3306` |
-
-容器内的 `localhost` 指容器自己，不是 Windows，也不是 MySQL 容器。
-
----
-
-## 2. 检查 Docker Desktop
-
-先启动 Docker Desktop，等待界面显示 Docker Engine 正常。
-
-PowerShell 执行：
+重启 Windows。重启后打开 Docker Desktop，等待它显示 Engine running（引擎正在运行）。然后在普通 PowerShell 中验证：
 
 ```powershell
 docker version
 docker compose version
 ```
 
-两条命令都应输出版本。若 `docker` 无法识别：
+你应该同时看到版本信息。例如：
 
-- 确认 Docker Desktop 已安装。
-- 重开 PowerShell 使 PATH 生效。
+```text
+Client: Docker Engine ...
+Server: Docker Engine ...
 
-若只有 Client 信息、Server 连接失败：
+Docker Compose version v2.x.x
+```
 
-- Docker Desktop 可能没有启动完成。
-- 等待或重启 Docker Desktop。
+这里有一个容易混淆的点：
 
-本日所有命令都在：
+- `docker version` 只有 `Client`，没有 `Server`：Docker Desktop 没启动完成。
+- `docker` 不是内部或外部命令：重新打开 PowerShell；仍不行就检查 Docker Desktop 是否安装成功。
+- `docker compose` 和 `docker-compose` 不一样：本教程使用现在 Docker Desktop 自带的 **`docker compose`**（中间是空格）。
+
+确认成功后，进入后端仓库：
 
 ```powershell
 Set-Location D:\LearnHub\LearnHubBackend
 ```
 
+后文所有命令默认都在这个目录运行。
+
 ---
 
-## 3. 环境变量文件
+## 1. 为什么已经会 `docker run`，还要学 Compose？
 
-### 3.1 创建 `.env.example`
+假设你只用 Docker 命令启动 Redis：
 
-路径：
-
-```text
-D:\LearnHub\LearnHubBackend\.env.example
+```powershell
+docker run -d --name learnhub-redis -p 6379:6379 redis:7.4-alpine
 ```
 
-内容：
+这条命令不是魔法，把它翻译成人话就是：
+
+| 片段 | 含义 |
+|---|---|
+| `docker run` | 从镜像创建一个新容器，并启动它 |
+| `-d` | 后台运行，终端不持续显示日志 |
+| `--name learnhub-redis` | 给这个容器起名 |
+| `-p 6379:6379` | Windows 的 6379 端口转发到容器的 6379 端口 |
+| `redis:7.4-alpine` | 使用 Redis 7.4 的轻量镜像 |
+
+一条命令还可以接受。但 LearnHub 后续至少有 MySQL、Redis、RabbitMQ、MinIO、Qdrant。你会需要写五条很长的 `docker run` 命令，还要记住：密码、端口、数据目录、网络、启动顺序。
+
+Docker Compose 就是把这些“启动规则”写进一个名为 `compose.yaml` 的文件。以后只需：
+
+```powershell
+docker compose up -d
+```
+
+它会按照文件描述，创建网络、数据卷和所有容器。
+
+可以把二者理解为：
+
+```text
+docker run      = 手动写一次启动命令
+Docker Compose  = 把一组启动命令保存成项目可重复使用的配置
+```
+
+Compose **不是另一种容器技术**，它仍然使用 Docker。它只是特别擅长管理“一组彼此有关的容器”。
+
+---
+
+## 2. 先建立正确的心智模型
+
+今天后面每个概念都绕不开这四样东西：镜像、容器、端口、数据卷。
+
+### 2.1 镜像（image）像菜谱，不是已经做好的菜
+
+`redis:7.4-alpine`、`mysql:8.4` 都是镜像名称。镜像包含程序和运行它所需的基础文件，但它本身不会运行。
+
+同一个镜像可以启动多个容器。例如一份 Redis 镜像，理论上可以启动测试 Redis 和开发 Redis 两个容器。
+
+### 2.2 容器（container）是一次真正运行
+
+容器是“根据镜像开出来的一次实例”。它有自己的进程、文件系统和网络。
+
+执行下面这条命令后，看到的每一行就是一个容器：
+
+```powershell
+docker ps -a
+```
+
+注意 `-a`：没有它时，只显示正在运行的容器；加了它还会显示已经停止的容器。
+
+### 2.3 端口：`左边:右边`，永远先问“从哪里访问”
+
+在 Compose 中：
+
+```yaml
+ports:
+  - "6379:6379"
+```
+
+左边和右边不是重复写错了：
+
+```text
+Windows（宿主机）6379  ──转发──>  Redis 容器内部 6379
+        左边                         右边
+```
+
+所以在 Windows 的浏览器或 Spring Boot 里访问 Redis，写 `localhost:6379`。
+
+如果你把它写成：
+
+```yaml
+ports:
+  - "6380:6379"
+```
+
+含义是 Windows 使用 6380，Redis 容器内部仍然是 6379。Windows 上的程序要连 `localhost:6380`。
+
+### 2.4 数据卷（volume）：容器可换，数据要留下
+
+容器被删除后，容器内部没有额外挂载的数据通常也会消失。数据库数据显然不能这样处理。
+
+```yaml
+volumes:
+  - redis-data:/data
+```
+
+`redis-data` 是 Docker 管理的命名卷；`/data` 是 Redis 容器里的目录。Redis 把数据写到 `/data`，实际由 Docker 放进 `redis-data` 卷中。
+
+关系如下：
+
+```text
+Redis 容器（可以删除、重建）
+          │ 写入 /data
+          ▼
+redis-data 命名卷（独立保存，通常会保留）
+```
+
+### 2.5 `localhost` 总是指“当前这台机器”
+
+这是初学 Compose 最常犯、也最值得彻底理解的错误。
+
+| 谁在访问 | 写什么地址 | 原因 |
+|---|---|---|
+| 你 Windows 上运行的 Spring Boot | `localhost:3306` | 它先访问 Windows，再由端口映射进入 MySQL 容器 |
+| Redis 容器访问 MySQL 容器 | `mysql:3306` | 同一 Compose 网络里，用服务名找另一个容器 |
+| MySQL 容器里的程序访问 `localhost` | MySQL 容器自己 | 它不会跳回 Windows，也不会跳到 Redis |
+
+后面看到 `mysql:3306`，不要把它理解为一个神秘网址：`mysql` 正是 Compose 文件里的服务名称。
+
+---
+
+## 3. 第一个小实验：只启动 Redis
+
+不要一开始就启动五个服务。先用一个非常小的 Compose 文件，把每一步的效果看清楚。
+
+### 3.1 创建练习目录和文件
+
+在仓库根目录创建一个仅用于本课练习的目录：
+
+```powershell
+New-Item -ItemType Directory -Path .\docker-compose-lab -Force
+```
+
+在 `D:\LearnHub\LearnHubBackend\docker-compose-lab` 新建文件 `compose.yaml`，填入：
+
+```yaml
+name: learnhub-lab
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+```
+
+YAML 对缩进敏感。请使用空格，不使用 Tab。这里的层级是：
+
+```text
+name
+services
+└── redis
+    ├── image
+    └── ports
+        └── 一条端口映射
+```
+
+逐行解释：
+
+```yaml
+name: learnhub-lab
+```
+
+这是 Compose 项目名称。Docker 会为这个项目生成诸如 `learnhub-lab-redis-1` 的容器名。
+
+```yaml
+services:
+```
+
+所有要运行的服务都写在这里。你可以把服务理解为“容器的设计说明”。
+
+```yaml
+  redis:
+```
+
+`redis` 是服务名。它既是当前 Compose 项目里的标识，也是将来其他容器连接它时使用的主机名。
+
+```yaml
+    image: redis:7.4-alpine
+```
+
+指定由哪个镜像创建容器。固定 `7.4-alpine` 是为了让所有人得到相近的版本；不要在学习项目里随意写 `latest`，因为它会随时间改变。
+
+```yaml
+    ports:
+      - "6379:6379"
+```
+
+把容器端口发布到 Windows。短横线表示这是一个列表项；即使现在只有一个端口，Compose 的格式也是列表，因为服务可能有多个端口。
+
+### 3.2 先验证配置，不要急着启动
+
+进入练习目录：
+
+```powershell
+Set-Location .\docker-compose-lab
+```
+
+运行：
+
+```powershell
+docker compose config
+```
+
+这一步只解析和展示最终配置，**不会创建容器**。它相当于让 Compose 先检查：YAML 有没有写坏、字段是否认识。
+
+若看到 `services.redis.image: redis:7.4-alpine` 等内容，说明通过。
+
+常见报错：
+
+- `mapping values are not allowed here`：通常是冒号后或缩进写错。
+- `found character '\t'`：用了 Tab，改为空格。
+- `docker: command not found` 或连接 Engine 失败：回到第 0 节，先解决 Docker Desktop/WSL。
+
+### 3.3 启动并观察发生了什么
+
+```powershell
+docker compose up -d
+```
+
+`up` 会做这几件事：
+
+1. 没有镜像就下载 Redis 镜像；
+2. 创建 Compose 默认网络；
+3. 按 `redis` 服务定义创建容器；
+4. 启动容器。
+
+`-d` 是 detached（后台模式）。没有 `-d` 时日志会占满当前终端；按 Ctrl+C 还可能停止容器。学习阶段更推荐 `-d`，然后主动查看日志。
+
+查看本项目状态：
+
+```powershell
+docker compose ps
+```
+
+预期能看到 `redis` 为 `running` 或 `Up`，端口一列中有 `0.0.0.0:6379->6379/tcp`。
+
+### 3.4 不安装 Redis 客户端，也能验证 Redis
+
+你不需要在 Windows 安装 `redis-cli`。它已经在 Redis 容器里：
+
+```powershell
+docker compose exec redis redis-cli ping
+```
+
+把命令拆开看：
+
+| 部分 | 意思 |
+|---|---|
+| `docker compose` | 操作当前目录的 Compose 项目 |
+| `exec` | 到一个“正在运行”的容器里执行命令 |
+| `redis` | 服务名，不是容器 ID |
+| `redis-cli ping` | 容器中执行的实际 Redis 命令 |
+
+正确结果：
+
+```text
+PONG
+```
+
+再做一次真实的读写：
+
+```powershell
+docker compose exec redis redis-cli SET lesson:day6 "hello-compose"
+docker compose exec redis redis-cli GET lesson:day6
+```
+
+第二条应输出：
+
+```text
+hello-compose
+```
+
+现在你已经真正使用了 Compose，而不是只“成功启动了一个黑盒”。
+
+### 3.5 停止练习，并观察为什么数据丢了
+
+执行：
+
+```powershell
+docker compose down
+```
+
+`down` 会停止并删除这次实验创建的容器和网络。它不会删除镜像。
+
+重新启动，再读取键：
+
+```powershell
+docker compose up -d
+docker compose exec redis redis-cli GET lesson:day6
+```
+
+这次通常拿不到 `hello-compose`，因为第一个练习没有配置数据卷；容器删掉后，容器内部数据也跟着没了。这正是下一节要解决的问题。
+
+清理这个小实验：
+
+```powershell
+docker compose down
+Set-Location ..
+```
+
+保留 `docker-compose-lab` 目录也没问题，它是你的学习笔记；如果你想保持仓库干净，也可以手动删除它。它不属于最终项目配置。
+
+---
+
+## 4. 第二个小实验：给 Redis 加数据卷
+
+现在把 `docker-compose-lab\compose.yaml` 改成下面这样。只有加号所在概念是新增内容，实际文件里不要写加号：
+
+```yaml
+name: learnhub-lab
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-lab-data:/data
+
+volumes:
+  redis-lab-data:
+```
+
+这里新增两件事。
+
+### 4.1 `command`：替换镜像默认启动命令
+
+```yaml
+command: ["redis-server", "--appendonly", "yes"]
+```
+
+Redis 默认主要在内存里保存数据。`--appendonly yes` 开启 AOF（Append Only File）持久化：每次写入会记录到文件。注意它只是让 Redis 有东西可以写入数据卷；**真正让数据跨容器保留的是下一段的 `volumes`**。
+
+方括号写法是 YAML 的短列表写法，等价于：
+
+```yaml
+command:
+  - redis-server
+  - --appendonly
+  - "yes"
+```
+
+两种都对。本教程在命令参数短时使用第一种，便于阅读。
+
+### 4.2 服务里的 `volumes` 与最外层的 `volumes`
+
+```yaml
+    volumes:
+      - redis-lab-data:/data
+```
+
+这句是“把哪个卷挂到容器哪里”。
+
+```yaml
+volumes:
+  redis-lab-data:
+```
+
+最外层这段是“声明这个命名卷存在，由 Docker 管理”。不要把它缩进到 `redis` 下面；缩进错了，YAML 的意思就变了。
+
+进入实验目录后运行：
+
+```powershell
+Set-Location .\docker-compose-lab
+docker compose up -d
+docker compose exec redis redis-cli SET lesson:volume "I-survive"
+docker compose down
+docker compose up -d
+docker compose exec redis redis-cli GET lesson:volume
+```
+
+这次应看到：
+
+```text
+I-survive
+```
+
+你可以查看 Docker 知道哪些卷：
+
+```powershell
+docker volume ls
+```
+
+实际卷名通常不是裸 `redis-lab-data`，而是 `learnhub-lab_redis-lab-data`；Compose 用项目名加前缀，避免不同项目恰好同名时冲突。
+
+> 重要：`docker compose down` 默认保留命名卷；`docker compose down -v` 会连卷一起删掉。后者意味着 MySQL 等服务的数据会被删除。Day 6 日常练习**不要执行 `down -v`**。
+
+练习完再运行一次 `docker compose down`，并回到项目根目录：
+
+```powershell
+docker compose down
+Set-Location ..
+```
+
+---
+
+## 5. LearnHub 真正的配置：先管理变量，再管理服务
+
+前两个实验里端口写死，是为了专注理解 Compose。真实项目里，密码和本机端口不应直接散落在 `compose.yaml` 里。
+
+### 5.1 `.env.example` 和 `.env` 分别是什么
+
+在 `D:\LearnHub\LearnHubBackend` 创建 `.env.example`：
 
 ```dotenv
-# Host ports. Change the left-side port here when Windows already uses it.
+# Windows host ports. If a port is occupied, change only the value on the right.
 MYSQL_PORT=3306
 REDIS_PORT=6379
 RABBITMQ_PORT=5672
@@ -141,72 +471,62 @@ MINIO_CONSOLE_PORT=9001
 QDRANT_HTTP_PORT=6333
 QDRANT_GRPC_PORT=6334
 
-# Local development credentials. Replace them in your real .env.
+# Local-development credentials. Do not use these values in production.
 MYSQL_DATABASE=learnhub
 MYSQL_USER=learnhub
-MYSQL_PASSWORD=change-me-mysql
-MYSQL_ROOT_PASSWORD=change-me-root
+MYSQL_PASSWORD=replace-with-your-local-mysql-password
+MYSQL_ROOT_PASSWORD=replace-with-your-local-root-password
 
 RABBITMQ_DEFAULT_USER=learnhub
-RABBITMQ_DEFAULT_PASS=change-me-rabbitmq
+RABBITMQ_DEFAULT_PASS=replace-with-your-local-rabbitmq-password
 
 MINIO_ROOT_USER=learnhub
-MINIO_ROOT_PASSWORD=change-me-minio-please
+MINIO_ROOT_PASSWORD=replace-with-a-long-local-minio-password
 ```
 
-`.env.example` 可以提交，因为它主要说明需要哪些变量。示例值不能在生产使用。
+`.env.example` 是“变量清单和格式示例”，可以提交到 Git。它让后来下载项目的人知道必须配置什么。
 
-### 3.2 创建真实 `.env`
+接着复制一份真实配置：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-打开 `.env`，修改密码。本地学习也不要全部使用 `123456`，养成习惯。
+打开 `.env`，把四个密码都改成你自己的本地密码。格式必须是：
 
-确认 Day 1 的 `.gitignore` 包含：
+```dotenv
+变量名=值
+```
+
+等号左右不要加空格。密码如果含有 `$`、`#` 或空格，初学阶段建议先换成不含这些字符的长密码，以免被 Compose 的变量语法干扰。
+
+检查 `.gitignore` 是否已经有这行：
 
 ```gitignore
 .env
 ```
 
-验证：
+然后执行：
 
 ```powershell
 git status --short
 ```
 
-应该看到 `.env.example`，但不能看到 `.env`。
+理想结果是：能看到 `.env.example`（如果它是新文件），但**看不到 `.env`**。
 
-### 3.3 重要区别：Compose `.env` 不等于系统环境变量
+### 5.2 一个特别重要的误解：Compose `.env` 不等于 Spring Boot 配置
 
-Docker Compose 会自动读取同目录 `.env`，用来替换 `${MYSQL_PORT}`。
+Compose 会自动读取同目录的 `.env`，用于替换 `compose.yaml` 中的 `${MYSQL_PORT}` 这类占位符。
 
-但你直接运行：
+但你用 IDEA 启动 Spring Boot 时，Java 程序并不会因为目录里有 `.env` 就自动读取它。以后 Java 要连接 MySQL，需要在 IDEA 的运行配置、PowerShell 环境变量或 Spring 配置文件中另行提供连接信息。
 
-```powershell
-java -jar ...
-```
-
-Spring Boot 不会自动读取这个 `.env` 文件。以后 Spring 需要密码时，你要：
-
-- 在 IDEA Run Configuration 设置环境变量；或
-- 在 PowerShell 设置 `$env:MYSQL_PASSWORD=...`；或
-- 使用部署平台的 Secret 配置。
-
-不要因为文件名叫 `.env` 就假设所有程序都会读取它。
+今天 `.env` 的职责只有一个：**给 Compose 配置赋值**。
 
 ---
 
-## 4. 创建完整 `compose.yaml`
+## 6. 创建最终的 `compose.yaml`
 
-在仓库根目录创建：
-
-```text
-D:\LearnHub\LearnHubBackend\compose.yaml
-```
-
-完整内容：
+在 `D:\LearnHub\LearnHubBackend` 创建 `compose.yaml`。先完整复制以下内容，下一节会逐个服务解释；不要边抄边“凭感觉删字段”。
 
 ```yaml
 name: learnhub
@@ -288,71 +608,117 @@ volumes:
   qdrant-data:
 ```
 
-### 4.1 `name`
+---
+
+## 7. 逐段读懂最终配置
+
+你已经理解 Redis 的 `image`、`ports`、`volumes`，所以五个服务只是同一组规律的重复应用，不是五套完全不同的知识。
+
+### 7.1 `environment`：把变量传进容器
+
+以 MySQL 为例：
 
 ```yaml
-name: learnhub
+environment:
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
 ```
 
-指定 Compose 项目名。容器、网络和卷会带上相应前缀，方便识别。
+左边 `MYSQL_DATABASE` 是 MySQL 镜像认识的环境变量名；右边 `${MYSQL_DATABASE}` 是 Compose 从 `.env` 取出的值。
 
-### 4.2 `services`
+假设 `.env` 有：
 
-每个一级服务名代表一个可运行组件。服务名同时用于内部网络寻址。
+```dotenv
+MYSQL_DATABASE=learnhub
+```
 
-### 4.3 `${VAR:-default}`
+Compose 最终传进 MySQL 容器的是：
+
+```text
+MYSQL_DATABASE=learnhub
+```
+
+MySQL 第一次初始化时会据此创建 `learnhub` 数据库和指定用户。
+
+> 因此，第一次启动 MySQL 后再修改 `.env` 的数据库名或 root 密码，通常不会改变已有数据卷中的 MySQL。不是 Compose 没读到变量，而是 MySQL 已经初始化完成。需要保留数据时不要随便重置；需要重新开始时，以后在明确确认后才会处理数据卷。
+
+### 7.2 `${变量:-默认值}`：有值用值，没有就用默认值
 
 ```yaml
-"${MYSQL_PORT:-3306}:3306"
+- "${MYSQL_PORT:-3306}:3306"
 ```
 
-如果 `MYSQL_PORT` 已定义就使用它；否则使用 3306。
+可以这样读：
 
-密码变量没有默认值，是为了缺失时尽早暴露问题，而不是悄悄使用弱密码。
+```text
+若 .env 定义 MYSQL_PORT，就用它；否则把左边端口当作 3306。
+```
 
-### 4.4 为什么 healthcheck 中是 `$${...}`
+密码变量没有默认值：密码漏写应该尽早报错，而不是悄悄使用某个弱密码。
+
+### 7.3 为什么健康检查的密码写成 `$${...}`
 
 ```yaml
--p$${MYSQL_ROOT_PASSWORD}
+test: ["CMD-SHELL", "mysqladmin ... -p$${MYSQL_ROOT_PASSWORD} --silent"]
 ```
 
-Compose 使用 `$` 做变量替换。写成 `$$` 是转义，意思是把 `$MYSQL_ROOT_PASSWORD` 原样传进容器，再由容器 shell 读取容器环境变量。
+Compose 看见 `${...}` 会在 Windows 上先替换它；但此处我们希望变量在 **MySQL 容器内部** 再由 shell 读取。
 
-如果只写 `${MYSQL_ROOT_PASSWORD}`，Compose 会在宿主机配置解析阶段直接替换。
+`$$` 是 Compose 的转义写法，它会把一个 `$` 原样交给容器。因此：
 
-### 4.5 Redis AOF
-
-```yaml
-command: ["redis-server", "--appendonly", "yes"]
+```text
+$${MYSQL_ROOT_PASSWORD}
+          ↓ Compose 处理后
+$MYSQL_ROOT_PASSWORD
+          ↓ MySQL 容器内 shell 处理后
+真实 root 密码
 ```
 
-开启 Append Only File 持久化，把写命令追加到磁盘。它不是生产调优方案，只是让本地 Redis 数据更容易保留。
+这不是要你死记，记住原则即可：**变量要在哪一层被读取，就让它留到那一层。**
 
-### 4.6 为什么 MinIO/Qdrant 没写容器名
+### 7.4 `healthcheck` 不等于“容器正在运行”
 
-Compose 会自动管理名称；业务通信使用稳定的服务名即可。固定 `container_name` 会减少同一配置启动多个项目副本的灵活性。
+MySQL 进程刚启动时，容器可能已经是 Up，但数据库还在创建系统表，尚不能接受 SQL 连接。
 
-### 4.7 镜像标签说明
+健康检查会定时执行一条小命令。通过后 `docker compose ps` 才显示 `healthy`。
 
-本教材给出可以明确复现的版本/版本线，不长期使用 `latest`。镜像生态会更新；如果某个标签将来不可用，先到官方镜像说明确认可用稳定标签，并把实际验证版本记录到 README，不要随意换成来源不明镜像。
+| 状态 | 意义 |
+|---|---|
+| `running` / `Up` | 容器主进程还在运行 |
+| `health: starting` | 正在等待健康检查 |
+| `healthy` | 检查命令成功 |
+| `unhealthy` | 多次检查失败；应看日志 |
+
+MinIO 和 Qdrant 本次没有配置 Compose healthcheck，所以它们显示 `Up` 也是正常的。我们会在浏览器/HTTP 请求中验证它们。
+
+### 7.5 各服务现在和未来分别做什么
+
+| 服务 | 今天是否连接 Java | 未来用途 |
+|---|---:|---|
+| MySQL | 否 | 用户、课程、订单等关系数据 |
+| Redis | 否 | 缓存、验证码、限流等 |
+| RabbitMQ | 否 | 异步消息，例如通知或学习进度事件 |
+| MinIO | 否 | 图片、课程附件等对象存储 |
+| Qdrant | 否 | 向量检索，后期 AI/知识库功能 |
+
+今天全部启动，是为了建立一份可复现的本地基础设施；不是要求你今天掌握它们各自的业务用法。
 
 ---
 
-## 5. 在启动前验证配置
+## 8. 正式启动前必须做的检查
 
-执行：
+确认你已经回到仓库根目录：
+
+```powershell
+Set-Location D:\LearnHub\LearnHubBackend
+```
+
+先运行：
 
 ```powershell
 docker compose config
 ```
 
-它会：
-
-- 检查 YAML 语法。
-- 展开 `.env` 变量。
-- 输出 Compose 最终理解的配置。
-
-注意：展开后的输出可能包含真实密码，不要把完整输出发到公开 Issue 或提交到仓库。
+这一步非常有价值：它检查 YAML，并把 `.env` 变量替换到配置中。它**不会启动容器**。
 
 如果出现：
 
@@ -360,349 +726,242 @@ docker compose config
 The "MYSQL_PASSWORD" variable is not set
 ```
 
-检查 `.env` 是否与 `compose.yaml` 在同一目录，变量名是否拼写一致。
+依次检查：
 
-如果出现 YAML 行号错误，检查缩进和 Tab。
+1. `.env` 是否和 `compose.yaml` 位于同一目录；
+2. `.env` 是否确实由 `.env.example` 复制而来；
+3. 变量名是否拼写一致；
+4. 变量是否写成了 `MYSQL_PASSWORD = xxx`（等号两边有空格是错误习惯）。
+
+不要把 `docker compose config` 的完整输出发到公开平台，因为其中可能包含你的真实密码。
 
 ---
 
-## 6. 第一次启动
+## 9. 正式启动、查看状态、逐项验证
+
+### 9.1 启动
 
 ```powershell
 docker compose up -d
 ```
 
-解释：
+第一次下载五个镜像可能需要较久，尤其网络不稳定时。不要在下载期间反复关闭 Docker Desktop 或重复执行同一命令。
 
-- `up`：创建需要的网络、卷和容器，然后启动。
-- `-d`：detached，后台运行，终端不会一直被日志占用。
-
-第一次会下载镜像。完成后：
+### 9.2 查看状态
 
 ```powershell
 docker compose ps
 ```
 
-你应看到五个服务。MySQL、Redis、RabbitMQ 在启动完成后应显示 healthy；MinIO 与 Qdrant 即使没有 Compose healthcheck，也应显示 Up。
+刚启动时 MySQL、Redis、RabbitMQ 可能显示 `starting`，等 30～60 秒再运行一次。预期：前三个服务最终 `healthy`；MinIO/Qdrant 为 `Up`。
 
-状态可能短暂显示 `health: starting`。MySQL 首次初始化需要时间，等待几十秒再 `ps`，不要立即认定失败。
-
----
-
-## 7. 逐个验证服务
-
-### 7.1 MySQL
-
-使用容器里的环境变量执行 ping：
+### 9.3 验证 MySQL
 
 ```powershell
 docker compose exec mysql sh -c 'mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD"'
 ```
 
-应看到：
+预期：
 
 ```text
 mysqld is alive
 ```
 
-查看数据库：
+再查看数据库是否被创建：
 
 ```powershell
 docker compose exec mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SHOW DATABASES;"'
 ```
 
-应包含 `learnhub`。
+结果里应有 `learnhub`（若你在 `.env` 里换了数据库名，则是你的名字）。
 
-### 7.2 Redis
+### 9.4 验证 Redis
 
 ```powershell
 docker compose exec redis redis-cli ping
 ```
 
-应返回：
+预期：
 
 ```text
 PONG
 ```
 
-### 7.3 RabbitMQ
+### 9.5 验证 RabbitMQ
 
 ```powershell
 docker compose exec rabbitmq rabbitmq-diagnostics -q ping
 ```
 
-应成功返回 Ping 信息。
+然后在浏览器打开：<http://localhost:15672>。
 
-浏览器打开：
+输入 `.env` 里的 `RABBITMQ_DEFAULT_USER` 与 `RABBITMQ_DEFAULT_PASS`。请理解：5672 是程序连接 RabbitMQ 的端口，15672 是给人看的管理网页；它们不是重复端口。
 
-```text
-http://localhost:15672
-```
+### 9.6 验证 MinIO
 
-使用 `.env` 中 RabbitMQ 用户名密码登录。不要把密码截图发到公开位置。
-
-### 7.4 MinIO
-
-健康地址：
+PowerShell 执行：
 
 ```powershell
 curl.exe -i http://localhost:9000/minio/health/live
 ```
 
-应返回 HTTP 200。
+看到 `HTTP/1.1 200` 说明 MinIO 存活。
 
-控制台：
+浏览器打开 <http://localhost:9001>，用 `.env` 中的 `MINIO_ROOT_USER` 和 `MINIO_ROOT_PASSWORD` 登录。此时不必创建 Bucket，后续文件功能再做。
 
-```text
-http://localhost:9001
-```
-
-使用 MinIO 变量登录。本周不创建业务 Bucket，第三周文件功能再做。
-
-### 7.5 Qdrant
+### 9.7 验证 Qdrant
 
 ```powershell
 curl.exe -i http://localhost:6333/healthz
 ```
 
-应返回 HTTP 200。
+看到 `HTTP/1.1 200` 即成功。
 
-Dashboard：
-
-```text
-http://localhost:6333/dashboard
-```
-
-本周不创建 collection，第五周向量功能再做。
+浏览器可打开 <http://localhost:6333/dashboard>。本周不创建 collection。
 
 ---
 
-## 8. 查看日志
+## 10. 日常使用的六个命令
 
-所有服务最近日志：
+| 你想做什么 | 命令 | 它是否删除数据 |
+|---|---|---|
+| 启动或按配置创建服务 | `docker compose up -d` | 否 |
+| 看状态 | `docker compose ps` | 否 |
+| 看所有服务最近日志 | `docker compose logs --tail 100` | 否 |
+| 持续看一个服务日志 | `docker compose logs -f mysql` | 否；Ctrl+C 只停止看日志 |
+| 暂停现有容器 | `docker compose stop` | 否 |
+| 恢复已暂停容器 | `docker compose start` | 否 |
+| 停止并移除容器、网络 | `docker compose down` | 默认保留命名卷 |
 
-```powershell
-docker compose logs --tail 100
-```
+`down` 后再 `up -d` 时，Compose 会重新创建容器，但复用原来的数据卷。这也是为什么它适合“今天关机，明天继续”。
 
-单个服务：
-
-```powershell
-docker compose logs --tail 100 mysql
-```
-
-持续跟随：
-
-```powershell
-docker compose logs -f rabbitmq
-```
-
-按 Ctrl+C 只停止日志跟随，不会停止后台容器。
-
-排错时不要先反复重启。先看：
-
-1. `docker compose ps` 的状态。
-2. 失败服务的日志。
-3. 端口是否冲突。
-4. 环境变量是否缺失。
-5. 数据卷中是否有旧配置影响初始化。
-
----
-
-## 9. 停止、启动和删除的区别
-
-暂停容器进程但保留容器：
-
-```powershell
-docker compose stop
-```
-
-再次启动现有容器：
-
-```powershell
-docker compose start
-```
-
-停止并删除容器与默认网络，但保留命名卷：
-
-```powershell
-docker compose down
-```
-
-重新创建：
-
-```powershell
-docker compose up -d
-```
-
-危险区别：
+请把下面这条命令当成危险操作：
 
 ```powershell
 docker compose down -v
 ```
 
-`-v` 会删除 Compose 命名卷，MySQL/Redis/RabbitMQ/MinIO/Qdrant 数据都会丢失。本项目日常不要使用。只有明确需要彻底重置本地数据且已确认无重要数据时才考虑。
+`-v` 表示把命名卷也删掉；这会删除本地 MySQL、Redis、RabbitMQ、MinIO、Qdrant 的数据。只有你明确想把本地环境完全重置，并确认数据可以丢弃时才使用它。现在不要使用。
 
 ---
 
-## 10. 端口冲突怎么处理
+## 11. 两个最常见故障：按证据排查
 
-典型错误：
+### 11.1 端口被占用
+
+典型信息：
 
 ```text
 Bind for 0.0.0.0:3306 failed: port is already allocated
 ```
 
-说明 Windows 的 3306 已被其他程序使用。
+这句话的真实含义是：Windows 上已经有程序占用了 3306，Docker 无法再把 MySQL 暴露到相同端口。它不表示 MySQL 镜像坏了。
 
-不要改容器内端口。修改 `.env`：
+先查是谁占用：
+
+```powershell
+Get-NetTCPConnection -LocalPort 3306 -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress, LocalPort, State, OwningProcess
+```
+
+如果你只是想让 LearnHub 用另一个端口，不需要关闭原程序。修改 `.env`：
 
 ```dotenv
 MYSQL_PORT=3307
 ```
 
-然后：
+然后执行：
 
 ```powershell
 docker compose up -d
 ```
 
-以后宿主机 Spring JDBC URL 使用：
+此时 Windows 上连接 MySQL 用：
 
 ```text
-jdbc:mysql://localhost:3307/learnhub
+localhost:3307
 ```
 
-但容器内仍是 `mysql:3306`。
+容器之间仍使用：
 
-其他组件同理修改左侧宿主机端口变量。
-
----
-
-## 11. `depends_on` 为什么还不够
-
-很多教程写：
-
-```yaml
-depends_on:
-  - mysql
+```text
+mysql:3306
 ```
 
-它主要控制启动顺序，不自动保证 MySQL 已完成初始化并能接受 SQL。容器进程启动与服务就绪之间可能相隔几十秒。
+只改左边（宿主机端口），不要改右边（镜像内服务监听端口）。Redis、RabbitMQ 等端口冲突也按同样方式在 `.env` 修改。
 
-真实应用需要：
+### 11.2 容器 `unhealthy` 或启动后立刻退出
 
-- 健康检查。
-- 合理连接超时。
-- 有限重试。
-- 启动失败时清晰日志。
-
-本周 Spring Boot 还不连接这些服务，所以暂时不写 application 的依赖关系。第二周接 MySQL 时再使用配置与测试验证。
-
----
-
-## 12. 故障练习
-
-### 练习 A：停止一个服务再恢复
+不要先删卷或重装 Docker。按这个顺序：
 
 ```powershell
-docker compose stop redis
 docker compose ps
-docker compose exec redis redis-cli ping
+docker compose logs --tail 100 mysql
 ```
 
-第三条应失败，因为容器没运行。查看状态后恢复：
+把 `mysql` 换成实际失败的服务名。日志的最后几十行通常比“重启一下试试”更有用。
 
-```powershell
-docker compose start redis
-docker compose exec redis redis-cli ping
-```
+常见原因：
 
-应重新返回 PONG。
-
-### 练习 B：验证数据卷保留数据
-
-写入 Redis：
-
-```powershell
-docker compose exec redis redis-cli SET learnhub:test persisted
-docker compose exec redis redis-cli GET learnhub:test
-```
-
-执行：
-
-```powershell
-docker compose down
-docker compose up -d
-```
-
-Redis healthy 后再次：
-
-```powershell
-docker compose exec redis redis-cli GET learnhub:test
-```
-
-如果 AOF 正常和卷保留，应看到 `persisted`。练习后删除：
-
-```powershell
-docker compose exec redis redis-cli DEL learnhub:test
-```
-
-### 练习 C：阅读一个端口冲突
-
-可以在已有服务占用端口时临时把另一个端口变量设成相同值，执行 `docker compose up -d`，阅读错误后立即恢复。不要修改真实数据卷或删除系统进程。
+| 现象 | 常见原因 | 应做什么 |
+|---|---|---|
+| MySQL 退出 | 密码变量缺失、旧数据卷与新初始化变量冲突 | 先看日志；不要直接删卷 |
+| `port is already allocated` | Windows 端口被占用 | 改 `.env` 左边的端口 |
+| Docker daemon 连接失败 | Docker Desktop/WSL 没启动 | 回到第 0 节 |
+| 拉镜像超时 | 网络或镜像仓库访问问题 | 重试，检查网络；不要随意换来路不明的镜像 |
 
 ---
 
-## 13. 把使用方法写入 README
+## 12. 今天的理解检查
 
-追加：
+不要看答案，先自己用一句话回答：
 
-```markdown
-## 本地基础设施
+1. 为什么 Docker Compose 不等于 Docker 的替代品？
+2. `"3307:3306"` 中左右两边分别属于谁？
+3. 为什么 Windows 中运行的 Spring Boot 使用 `localhost:3307`，而容器中的服务使用 `mysql:3306`？
+4. `docker compose down` 后，为什么 MySQL 数据通常还在？
+5. 为什么 `docker compose down -v` 危险？
+6. `.env.example` 为什么可以提交 Git，而 `.env` 不应该提交？
+7. Compose 的 `.env` 会自动给 IDEA 中启动的 Spring Boot 提供变量吗？
+8. `docker compose ps` 显示 Up，是否一定说明 MySQL 已经能接受 SQL？为什么？
+9. 端口冲突时，为什么应该改 `MYSQL_PORT=3307`，而非修改 `:3306` 右边的端口？
+10. 遇到服务启动失败时，第一条查看日志的命令是什么？
 
-1. 复制环境变量示例：`Copy-Item .env.example .env`
-2. 修改 `.env` 中的本地密码。
-3. 验证配置：`docker compose config`
-4. 启动：`docker compose up -d`
-5. 查看状态：`docker compose ps`
-6. 停止并保留数据：`docker compose down`
+参考答案：
 
-默认端口：MySQL 3306、Redis 6379、RabbitMQ 5672/15672、MinIO 9000/9001、Qdrant 6333/6334。
+1. Compose 仍然使用 Docker，只是把多个容器的配置和生命周期集中管理。
+2. 左边是 Windows 宿主机端口，右边是容器内端口。
+3. 两者所在网络不同；Compose 内部通过服务名 DNS 访问，不需经过 Windows 端口映射。
+4. 数据放在命名卷中，`down` 默认不会删除卷。
+5. `-v` 会删除命名卷，也就是各服务的本地持久数据。
+6. example 是变量契约，真实 `.env` 含个人密码和本机设置。
+7. 不会；它只供 Compose 插值，Spring Boot 要单独配置。
+8. 不一定。容器进程在跑不等于数据库初始化结束，需要 healthcheck 或连接验证。
+9. 右边是镜像内 Redis/MySQL 等服务的固定监听端口；冲突发生在 Windows 左边的端口。
+10. 例如 `docker compose logs --tail 100 mysql`，把 mysql 换成失败服务。
+
+---
+
+## 13. Day 6 完成标准
+
+只有下面项目都做到，才算完成 Day 6：
+
+- [ ] Docker Desktop 可正常启动，`docker version` 有 Client 和 Server。
+- [ ] 你完成过单 Redis 的 Compose 实验，得到过 `PONG`。
+- [ ] 你完成过带数据卷的 Redis 实验，并亲眼验证 `down` 后数据仍在。
+- [ ] 仓库根目录有 `compose.yaml`、`.env.example` 和本机 `.env`。
+- [ ] `.env` 已被 `.gitignore` 忽略，未出现在 `git status` 中。
+- [ ] `docker compose config` 无错误。
+- [ ] 五个 LearnHub 服务启动，MySQL/Redis/RabbitMQ healthy，MinIO/Qdrant 的 HTTP 验证通过。
+- [ ] 你知道用 `docker compose ps` 和 `docker compose logs --tail 100 服务名` 排查问题。
+- [ ] 你没有执行 `docker compose down -v`。
+
+完成后，你发给我以下**不含密码**的信息即可：
+
+```text
+1. docker compose ps 的输出
+2. 五项验证命令各自的结果（可省略密码）
+3. 第 12 节十道题中你觉得最不确定的答案
 ```
 
-同时记录你实际验证的镜像标签。如果因环境调整端口，记录使用 `.env` 覆盖，而不是把个人端口写死为全项目唯一选择。
-
----
-
-## 14. 今日验收清单
-
-- [ ] `docker version` 和 `docker compose version` 正常。
-- [ ] `.env.example` 可以提交，真实 `.env` 被忽略。
-- [ ] `docker compose config` 通过。
-- [ ] MySQL、Redis、RabbitMQ 为 healthy。
-- [ ] MinIO health 返回 200，控制台可登录。
-- [ ] Qdrant health 返回 200，Dashboard 可打开。
-- [ ] 五个服务均使用命名卷。
-- [ ] 我能解释宿主机端口与容器端口。
-- [ ] `docker compose down` 后数据卷仍存在。
-- [ ] 我没有执行 `down -v` 删除数据。
-- [ ] README 已加入启动与停止说明。
-
----
-
-## 15. 复盘题与参考答案
-
-1. **镜像和容器区别？** 镜像是只读运行模板，容器是镜像的一次运行实例。
-2. **为什么需要数据卷？** 把持久数据从容器可丢弃文件系统中分离，容器重建后仍能复用。
-3. **`3307:3306` 两边分别是什么？** 左边是 Windows 宿主机端口，右边是容器内服务端口。
-4. **容器间为什么用 `mysql:3306`？** Compose 内部 DNS 使用服务名解析目标容器，不经过宿主机映射端口。
-5. **容器内的 localhost 是谁？** 当前容器自己，不是宿主机或其他服务。
-6. **`docker compose down` 与 `down -v` 区别？** 前者删除容器和网络但保留命名卷；后者还删除卷和数据。
-7. **为什么 depends_on 不能保证 MySQL 可用？** 它能控制容器启动关系，但进程已启动不等于服务初始化完成。
-8. **为什么 `.env.example` 提交而 `.env` 不提交？** example 描述变量契约，真实 `.env` 可能包含本机秘密。
-9. **Compose 的 `.env` 会自动被 Spring Boot 读取吗？** 不会；Compose 用它做变量插值，直接运行的 Java 进程需要自己的环境变量来源。
-10. **服务启动失败的排查顺序？** 先 ps 看状态，再看对应 logs，然后检查端口、变量、健康检查和数据卷影响。
-
-完成后交给老师：`compose.yaml`、`.env.example`、`docker compose ps`、五项服务验证结果、Redis 持久化实验结果和十道题自己的答案。不要发送真实 `.env` 或密码。
-
+我会按你的实际输出继续带你排错或进入 Day 7。
