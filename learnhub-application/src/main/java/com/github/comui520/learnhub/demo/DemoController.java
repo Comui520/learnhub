@@ -5,6 +5,7 @@ import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.demo.dto.GreetingRequest;
 import com.github.comui520.learnhub.demo.dto.GreetingResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 @Tag(name = "Demo", description = "仅仅是测试接口")
 @RestController
 @RequestMapping("/api/v1/demo")
+
 public class DemoController {
     private final GreetingService greetingService;
     public DemoController(GreetingService greetingService){
@@ -19,6 +21,11 @@ public class DemoController {
     }
 
     @Operation(summary = "生成问候语", description = "用于验证 JSON、参数校验和统一异常响应")
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "成功，返回问候语"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "参数错误（COMMON_0400）"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422", description = "业务错误（DEMO_ERROR_0422）")
+    })
     @PostMapping("/greetings")
     public ApiResponse<String> greet(
             @Valid @RequestBody GreetingRequest request

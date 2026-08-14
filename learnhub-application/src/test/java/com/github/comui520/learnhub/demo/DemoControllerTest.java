@@ -9,6 +9,7 @@ import com.github.comui520.learnhub.demo.dto.GreetingResponse;
 import com.github.comui520.learnhub.web.service.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -22,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(DemoController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
 public class DemoControllerTest {
     // mockmvc是用来模拟发送请求的
@@ -42,10 +44,10 @@ public class DemoControllerTest {
                 .willReturn(new GreetingResponse("Hello, LearnHub!"));
 
         mockMvc.perform(
-                post("/api/v1/demo/greetings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsBytes(request))
-        )
+                        post("/api/v1/demo/greetings")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsBytes(request))
+                )
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("COMMON_0000"))
@@ -56,13 +58,13 @@ public class DemoControllerTest {
     }
 
     @Test
-    public void shouldReturnBadRequestWhenNameIsBlank() throws Exception{
+    public void shouldReturnBadRequestWhenNameIsBlank() throws Exception {
         GreetingRequest request = new GreetingRequest("");
         mockMvc.perform(
-                post("/api/v1/demo/greetings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsBytes(request))
-        )
+                        post("/api/v1/demo/greetings")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsBytes(request))
+                )
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("COMMON_0400"))
@@ -77,9 +79,11 @@ public class DemoControllerTest {
         given(greetingService.greet("forbidden"))
                 .willThrow(new BusinessException(DemoErrorCode.NAME_FORBIDDEN));
 
-        mockMvc.perform(post("/api/v1/demo/greetings")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsBytes(request)))
+        mockMvc.perform(
+                        post("/api/v1/demo/greetings")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsBytes(request))
+                )
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("DEMO_ERROR_0422"))
                 .andExpect(jsonPath("$.message").value("Name is forbidden"))
@@ -92,11 +96,26 @@ public class DemoControllerTest {
     void shouldReturnBadRequestWhenJsonIsMalformed() throws Exception {
         mockMvc.perform(post("/api/v1/demo/greetings")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"bad json\":\"fuck\"}"))
+                        .content("{\"bad json\":}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON_0400"));
 
         verifyNoInteractions(greetingService);
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenNameIsTooLong() throws Exception {
+        GreetingRequest request = new GreetingRequest("x".repeat(51));
+        mockMvc.perform(
+                        post("/api/v1/demo/greetings")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsBytes(request))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_0400"))
+                .andExpect(jsonPath("$.data[0].field").value("name"))
+                .andExpect(jsonPath("$.data[0].message").value("Name should not be more than 50 characters")
+                );
     }
 
 }
