@@ -3,13 +3,19 @@ server:
 spring:
   application:
     name: learnhub
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:learnhub}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:learnhub}
+    password: ${MYSQL_PASSWORD:1234}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
 
 logging:
   level:
     com.github.comui520.learnhub: DEBUG
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health, info
+learnhub:
+  jwt:
+    secret: ${JWT_SECRET:ZGV2LW9ubHktand0LXNlY3JldC1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi0wMTIzNDU2Nzg5}
+    expiration: 3600000
