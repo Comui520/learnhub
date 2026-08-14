@@ -1,4 +1,4 @@
-package com.github.comui520.api;
+package com.github.comui520.learnhub.api;
 
 import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.common.exception.CommonErrorCode;

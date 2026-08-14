@@ -1,4 +1,4 @@
-package com.github.comui520.exception;
+package com.github.comui520.learnhub.exception;
 
 import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.common.exception.BusinessException;
