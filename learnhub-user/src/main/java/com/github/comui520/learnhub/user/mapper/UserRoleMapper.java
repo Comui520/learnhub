@@ -3,6 +3,7 @@ package com.github.comui520.learnhub.user.mapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.List;
 public interface UserRoleMapper {
 
     @Insert("insert into `user_role` (user_id, role_id) VALUES (#{userId}, #{roleId})")
-    Integer insertUserRole(Long userId, Long roleId);
+    Integer insertUserRole(@Param("userId") Long userId, @Param("roleId") Long roleId);
 
 
     // 根据用户ID查询权限代码
@@ -27,5 +28,5 @@ public interface UserRoleMapper {
                         )
                     )
             """)
-    List<String> selectPermissionCodesByUserId(Long userId);
+    List<String> selectPermissionCodesByUserId(@Param("userId") Long userId);
 }

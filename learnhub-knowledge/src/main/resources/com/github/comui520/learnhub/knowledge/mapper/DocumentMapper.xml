@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.comui520.learnhub.knowledge.mapper.DocumentMapper">
+
+    <select id="findByKnowledgeBaseIdAndSha256"
+            resultType="com.github.comui520.learnhub.knowledge.entity.Document">
+        select * from `document`
+        where document.knowledge_base_id = #{knowledgeBaseId}
+        and document.sha256 = #{sha256}
+    </select>
+    <select id="findByIdAndUserId"
+            resultType="com.github.comui520.learnhub.knowledge.entity.Document">
+        select * from `document`
+        where document.id = #{id}
+        and document.user_id = #{userId}
+    </select>
+</mapper>
