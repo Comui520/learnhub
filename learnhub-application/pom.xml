@@ -26,10 +26,20 @@
             <artifactId>learnhub-user</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.github.comui520</groupId>
+            <artifactId>learnhub-knowledge</artifactId>
+        </dependency>
+
         <!-- 提供 Spring MVC、内嵌 Tomcat 和 JSON 序列化。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
 
         <!-- 提供 @Valid、@NotBlank、@Size 等参数校验。 -->
