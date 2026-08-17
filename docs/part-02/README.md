@@ -75,6 +75,8 @@ Session：Session X
 - HTTP API 前缀：`/api/v1`；认证相关接口在 `/api/v1/auth/**`。
 - 统一响应：`ApiResponse<T>`；错误码风格：`USER_ERROR_xxxx`，通用错误用 `COMMON_xxxx`。
 - 密码、token、密钥绝不写进日志和响应；`User` 实体绝不直接返回给前端。
+- `SecurityConfig` 是进程级全局配置，**只需一份**（现在在 user 模块）；新模块不要重复写过滤器链，公开路径加到它的 `permitAll()` 或按需用 `@PreAuthorize`。
+- RBAC 权限全局生效：过滤器给每个请求装好角色/权限，任何模块的接口都能用 `hasRole` / `hasAuthority`；新模块要用的权限点通过迁移往 `permission` 表加种子数据。
 - 数据库变更一律走 Flyway，已执行的迁移文件不许修改。
 - 迁移文件放在**拥有这些表的模块**的 `src/main/resources/db/migration/` 下；**版本号全局连续**（所有模块共用一条 `flyway_schema_history`），新模块第一版从当前最大版本的下一个数字开始，不要各模块从 V1 重排。
 - 控制器只做 Web 边界，业务在 Service，SQL 重要的手写。

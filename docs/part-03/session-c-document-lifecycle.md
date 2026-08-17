@@ -66,18 +66,25 @@ public void delete(Long userId, Long documentId) {
         throw new BusinessException(KnowledgeErrorCode.DOCUMENT_NOT_FOUND);
     }
     documentMapper.deleteById(documentId);
-    try {
-        minioClient.removeObject(RemoveObjectArgs.builder()
-                .bucket(minioProperties.getBucket())
-                .object(document.getObjectName())
-                .build());
-    } catch (Exception e) {
-        log.error("MinIO object delete failed, need compensation: object={}", document.getObjectName(), e);
+    // 同一文件可能被多个知识库引用（uk_kb_sha256 允许跨库重复），
+    // 删除前必须确认没有其他记录还引用这个对象，否则会误删别人的数据
+    boolean stillReferenced = documentMapper.existsByObjectName(document.getObjectName());
+    if (!stillReferenced) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(minioProperties.getBucket())
+                    .object(document.getObjectName())
+                    .build());
+        } catch (Exception e) {
+            log.error("MinIO object delete failed, need compensation: object={}", document.getObjectName(), e);
+        }
     }
 }
 ```
 
 注意 `@Transactional` 的位置：事务在方法返回时才提交，所以顺序是“先删记录 → 再删 MinIO”；如果 MinIO 抛异常被吞掉，事务正常提交。吞异常是为了不让删除接口 500——代价是可能留下孤儿对象（日志里等着补偿）。
+
+`DocumentMapper` 需要补一个方法（自己写）：`existsByObjectName(String objectName)`——`SELECT COUNT(*) ... WHERE object_name = #{objectName}` 返回是否存在。删除记录后再查，剩下的记录数就是“其他知识库的引用”。
 
 ## 3. 状态机真正用起来
 

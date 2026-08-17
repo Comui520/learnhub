@@ -49,5 +49,6 @@
 5. 用户数据隔离为什么要在 SQL 层做，而不是只靠 Controller 判断？
 6. 删除知识库时，数据库记录和 MinIO 对象怎么保持一致？
 
-从 [Session A](session-a-minio-and-upload.md) 开始。
+> 开始前或做到 Session B 时，先读 [前置教学：MyBatis-Plus 高级用法与 XML Mapper](primer-mybatis-plus-and-xml.md)——列表分页、条件查询、XML 动态 SQL 都会用到。
 
+从 [Session A](session-a-minio-and-upload.md) 开始。

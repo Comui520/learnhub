@@ -85,7 +85,7 @@ byte[] hash = digest.digest(inputStream.readAllBytes());
 String sha256 = HexFormat.of().formatHex(hash);   // Java 17+ 自带 HexFormat
 ```
 
-去重策略：`document` 表建 `UNIQUE KEY uk_user_sha256 (user_id, sha256)`，上传前先查一次给出友好 409；唯一索引是并发下的最后防线（Part 2 学过同一招）。
+去重策略：`document` 表建 `UNIQUE KEY uk_kb_sha256 (knowledge_base_id, sha256)`——**同一知识库内**不能重复上传同一文件；同一文件传到**不同知识库**是允许的（各一条记录）。MinIO 对象名仍用 sha256，存储天然只存一份。上传前先查一次给出友好 409；唯一索引是并发下的最后防线（Part 2 学过同一招）。
 
 ### 2.5 文档状态机
 
@@ -254,7 +254,7 @@ CREATE TABLE `document`
     created_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_user_sha256 (user_id, sha256),
+    UNIQUE KEY uk_kb_sha256 (knowledge_base_id, sha256),
     KEY idx_knowledge_base_id (knowledge_base_id),
     KEY idx_status (status)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT ='文档表';
@@ -278,7 +278,7 @@ CREATE TABLE `document_task`
 看懂三个设计点：
 
 - `uk_user_name`：同一用户不能建两个同名知识库。
-- `uk_user_sha256`：同一用户不能重复上传同一文件（去重的数据库层保证）。
+- `uk_kb_sha256`：同一知识库不能重复上传同一文件；跨知识库允许（MinIO 对象仍按 sha256 只存一份，删除时要注意引用，Session C 讲）。
 - `document_task` 现在只建表不写代码，Part 4 用。
 
 ### Step 5：实体和 Mapper
@@ -301,8 +301,8 @@ public interface KnowledgeBaseMapper extends BaseMapper<KnowledgeBase> {
 @Mapper
 public interface DocumentMapper extends BaseMapper<Document> {
 
-    @Select("SELECT * FROM `document` WHERE user_id = #{userId} AND sha256 = #{sha256}")
-    Document findByUserIdAndSha256(@Param("userId") Long userId, @Param("sha256") String sha256);
+    @Select("SELECT * FROM `document` WHERE knowledge_base_id = #{knowledgeBaseId} AND sha256 = #{sha256}")
+    Document findByKnowledgeBaseIdAndSha256(@Param("knowledgeBaseId") Long knowledgeBaseId, @Param("sha256") String sha256);
 
     @Select("SELECT * FROM `document` WHERE id = #{id} AND user_id = #{userId}")
     Document findByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
@@ -415,8 +415,8 @@ public class DocumentService {
         // ② 算 SHA-256（内容指纹）
         String sha256 = sha256Hex(file.getInputStream());
 
-        // ③ 同用户重复文件：友好 409（uk_user_sha256 是并发兜底）
-        if (documentMapper.findByUserIdAndSha256(userId, sha256) != null) {
+        // ③ 同知识库重复文件：友好 409（uk_kb_sha256 是并发兜底）
+        if (documentMapper.findByKnowledgeBaseIdAndSha256(knowledgeBaseId, sha256) != null) {
             throw new BusinessException(KnowledgeErrorCode.DUPLICATE_DOCUMENT);
         }
 
@@ -494,6 +494,6 @@ curl.exe -i -X POST "http://localhost:8080/api/v1/knowledge-bases/1/documents" -
 2. bucket 和 object 是什么？object name 为什么用 sha256 开头？
 3. 上传流程里“查重 → 传 MinIO → 建记录”三步，第 4 步失败会怎样？`@Transactional` 能回滚 MinIO 的上传吗？（提示：不能，这是分布式一致性问题，Session C 会讲处理）
 4. 为什么文件大小、类型不能信任客户端的值？
-5. `uk_user_sha256` 唯一索引和 Service 查重是什么关系？（Part 2 答过一遍，现在再答）
+5. `uk_kb_sha256` 唯一索引和 Service 查重是什么关系？（Part 2 答过一遍，现在再答）
 
 完成并验证后，进入 [Session B](session-b-knowledge-base-crud.md)：知识库剩余 CRUD——这次换你主导。
