@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.comui520.learnhub.knowledge.mapper.DocumentFileMapper">
+    <select id="selectByIdsAndUserId" resultType="com.github.comui520.learnhub.knowledge.dto.DocumentResponse">
+        select
+        df.id fileId,
+        df.file_name fileName,
+        df.file_size fileSize,
+        df.sha256,
+        df.status,
+        df.created_at
+        from `document_file` df
+        where df.user_id = #{userId}
+        <if test="documentIds != null and documentIds.size() > 0">
+            and df.id in
+            <foreach item="id" collection="documentIds" separator="," open="(" close=")">
+                #{id}
+            </foreach>
+        </if>
+        and not exists (
+        select 1
+        from `knowledge_base_document` kbd
+        where kbd.knowledge_base_id = #{knowledgeBaseId}
+        and kbd.file_id = df.id
+        )
+    </select>
+</mapper>

@@ -1,27 +1,19 @@
 package com.github.comui520.learnhub.knowledge.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.comui520.learnhub.common.api.ApiResponse;
-import com.github.comui520.learnhub.common.exception.BusinessException;
-import com.github.comui520.learnhub.knowledge.KnowledgeErrorCode;
-import com.github.comui520.learnhub.knowledge.dto.CreateKnowledgeBaseRequest;
-import com.github.comui520.learnhub.knowledge.dto.KnowledgeBaseListRequest;
-import com.github.comui520.learnhub.knowledge.dto.KnowledgeBaseResponse;
-import com.github.comui520.learnhub.knowledge.dto.UpdateKnowledgeBaseRequest;
-import com.github.comui520.learnhub.knowledge.entity.KnowledgeBase;
+import com.github.comui520.learnhub.common.dto.PageParam;
+import com.github.comui520.learnhub.knowledge.dto.*;
+import com.github.comui520.learnhub.knowledge.service.DocumentService;
 import com.github.comui520.learnhub.knowledge.service.KnowledgeBaseService;
-import com.github.comui520.learnhub.knowledge.service.impl.KnowledgeBaseServiceImpl;
 import com.github.comui520.learnhub.user.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.simpleframework.xml.core.Validate;
 import org.springframework.web.bind.annotation.*;
-
 
 @Tag(name = "Knowledge Bases", description = "知识库")
 @RequestMapping("/api/v1/knowledge-bases")
@@ -30,17 +22,18 @@ import org.springframework.web.bind.annotation.*;
 public class KnowledgeBaseController {
 
     private final KnowledgeBaseService knowledgeBaseService;
-
     private final CurrentUser currentUser;
-    
+    private final DocumentService documentService;
+
     public KnowledgeBaseController(
-            KnowledgeBaseServiceImpl knowledgeBaseService,
+            KnowledgeBaseService knowledgeBaseService,
+            DocumentService documentService,
             CurrentUser currentUser
     ) {
         this.knowledgeBaseService = knowledgeBaseService;
+        this.documentService = documentService;
         this.currentUser = currentUser;
     }
-
 
     @PostMapping("/create")
     @ApiResponses(value = {
@@ -55,11 +48,8 @@ public class KnowledgeBaseController {
     public ApiResponse<KnowledgeBaseResponse> create(
             @Valid @RequestBody CreateKnowledgeBaseRequest request
     ) {
-        Long userId = currentUser.currentUserId();
-        return ApiResponse.success(knowledgeBaseService.create(userId, request));
+        return ApiResponse.success(knowledgeBaseService.create(currentUser.currentUserId(), request));
     }
-
-
 
     @GetMapping
     @Operation(summary = "获取知识库列表", description = "获取当前用户的知识库列表，支持分页")
@@ -70,13 +60,9 @@ public class KnowledgeBaseController {
     public ApiResponse<IPage<KnowledgeBaseResponse>> list(
             @Valid KnowledgeBaseListRequest request
     ) {
-        int page = request.page();
-        int size = request.size();
-        Long userId = currentUser.currentUserId();
-        return ApiResponse.success(knowledgeBaseService.page(userId, page, size));
+        return ApiResponse.success(knowledgeBaseService.page(
+                currentUser.currentUserId(), request.page(), request.size()));
     }
-
-
 
     @GetMapping("/{id}")
     @Operation(summary = "获取知识库详情", description = "获取指定知识库的详情")
@@ -88,23 +74,8 @@ public class KnowledgeBaseController {
             }
     )
     public ApiResponse<KnowledgeBaseResponse> get(@PathVariable Long id) {
-        Long userId = currentUser.currentUserId();
-        KnowledgeBase knowledgeBase = knowledgeBaseService.lambdaQuery()
-                .eq(KnowledgeBase::getId, id)
-                .eq(KnowledgeBase::getUserId, userId)
-                .one();
-        if (knowledgeBase == null) {
-            throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_NOT_FOUND);
-        }
-        return ApiResponse.success(new KnowledgeBaseResponse(
-                knowledgeBase.getId(),
-                knowledgeBase.getName(),
-                knowledgeBase.getDescription(),
-                knowledgeBase.getCreatedAt()
-        ));
+        return ApiResponse.success(knowledgeBaseService.getById(currentUser.currentUserId(), id));
     }
-
-
 
     @PutMapping("/{id}")
     @ApiResponses(
@@ -122,30 +93,89 @@ public class KnowledgeBaseController {
     public ApiResponse<KnowledgeBaseResponse> update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateKnowledgeBaseRequest request
-    ){
-        Long userId = currentUser.currentUserId();
-        KnowledgeBase knowledgeBase = knowledgeBaseService.lambdaQuery()
-                .eq(KnowledgeBase::getId, id)
-                .eq(KnowledgeBase::getUserId, userId)
-                .one();
-        if (knowledgeBase == null) {
-            throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_NOT_FOUND);
-        }
-        knowledgeBase.setName(request.name());
-        knowledgeBase.setDescription(request.description());
-        knowledgeBaseService.updateById(knowledgeBase);
-        return ApiResponse.success(new KnowledgeBaseResponse(
-                knowledgeBase.getId(),
-                knowledgeBase.getName(),
-                knowledgeBase.getDescription(),
-                knowledgeBase.getCreatedAt()
-        ));
+    ) {
+        return ApiResponse.success(knowledgeBaseService.update(currentUser.currentUserId(), id, request));
     }
 
     @DeleteMapping("/{id}")
+    @Operation(summary = "删除知识库", description = "删除指定知识库（有文档时返回 409）")
+    @ApiResponses(
+            value = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "删除知识库成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "无权限（COMMON_0403）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（KNOWLEDGE_BASE_ERROR_0404）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "知识库下有文档（KB_ERROR_0409）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "服务器内部错误（COMMON_0500）")
+            }
+    )
     public ApiResponse<Void> delete(@PathVariable Long id) {
-        Long userId = currentUser.currentUserId();
-        knowledgeBaseService.delete(userId, id);
+        knowledgeBaseService.delete(currentUser.currentUserId(), id);
         return ApiResponse.success(null);
+    }
+
+    @PostMapping("/bind-document")
+    @Operation(summary = "绑定文档到知识库", description = "将文档绑定到指定知识库")
+    @ApiResponses(
+            value = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "绑定文档到知识库成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "无权限（COMMON_0403）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（KNOWLEDGE_BASE_ERROR_0404）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "服务器内部错误（COMMON_0500）")
+            }
+    )
+    public ApiResponse<Void> bindDocument(
+            @Valid @RequestBody BindDocumentRequest request
+    ) {
+        knowledgeBaseService.bindDocuments(currentUser.currentUserId(), request.knowledgeBaseId(), request.documentFileIds());
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/{id}/file")
+    @ApiResponses(
+            value = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "获取文档列表成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（KB_ERROR_0404）")
+            }
+    )
+    @Operation(summary = "获取文档列表", description = "获取知识库下的文档列表（分页）")
+    public ApiResponse<IPage<DocumentResponse>> get(
+            @PathVariable Long id,
+            @Valid PageParam request
+    ) {
+        return ApiResponse.success(
+                documentService.pageDocuments(currentUser.currentUserId(), id, request.getPage(), request.getSize())
+        );
+    }
+
+    @PostMapping("/unbind-document")
+    @ApiResponses(
+            value = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "解绑文档成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "无权限（COMMON_0403）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（KNOWLEDGE_BASE_ERROR_0404）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "服务器内部错误（COMMON_0500）")
+            }
+    )
+    @Operation(summary = "解绑文档", description = "将文档从知识库中解绑, 其实就是: 全部解绑, 然后重新绑定")
+    public ApiResponse<Void> unbindDocument(
+            @Valid @RequestBody BindDocumentRequest request
+    ) {
+        knowledgeBaseService.unbindDocuments(currentUser.currentUserId(), request.knowledgeBaseId(), request.documentFileIds());
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/{id}/task")
+    @Operation(summary = "获取文档解析任务", description = "获取文档解析任务")
+    public ApiResponse<IPage<DocumentTaskResponse>> getTaskList(
+            @PathVariable(value = "id") Long knowledgeBaseId,
+            @RequestParam(required = false) String status,
+            @Valid PageParam pageParam
+    ){
+        return ApiResponse.success(
+                knowledgeBaseService.getTaskList(currentUser.currentUserId(), knowledgeBaseId, pageParam.getPage(), pageParam.getSize(), status)
+        );
     }
 }

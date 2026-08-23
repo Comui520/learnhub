@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.comui520.learnhub.knowledge.mapper.KnowledgeBaseDocumentMapper">
+
+
+    <select id="selectPageWithFile" resultType="com.github.comui520.learnhub.knowledge.dto.DocumentRow">
+        select kbd.id,
+               kbd.file_id,
+               kbd.knowledge_base_id,
+               df.file_name,
+               df.file_size,
+               df.sha256,
+               df.status,
+               kbd.created_at
+        from knowledge_base_document kbd
+                 join document_file df on df.id = kbd.file_id
+        where kbd.knowledge_base_id = #{knowledgeBaseId}
+          and df.user_id = #{userId}
+        order by kbd.created_at desc
+    </select>
+
+</mapper>

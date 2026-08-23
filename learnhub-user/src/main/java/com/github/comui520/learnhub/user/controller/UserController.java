@@ -3,7 +3,6 @@ package com.github.comui520.learnhub.user.controller;
 import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.user.dto.UserResponse;
 import com.github.comui520.learnhub.user.service.UserService;
-import com.github.comui520.learnhub.user.service.impl.UserServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -25,8 +24,8 @@ public class UserController {
 
     private final UserService userService;
 
-    public UserController(UserServiceImpl userServiceImpl) {
-        this.userService = userServiceImpl;
+    public UserController(UserService userService) {
+        this.userService = userService;
     }
 
     @Operation(summary = "当前用户", description = "获取当前登录用户信息")

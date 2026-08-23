@@ -78,7 +78,9 @@ public ApiResponse<KnowledgeBaseResponse> getById(@PathVariable Long id) {
 2. 级联删除数据库记录，但 MinIO 对象留着（孤儿对象）。
 3. 级联删除数据库记录 + 删除 MinIO 对象。
 
-选项 3 最完整，但“数据库删了、MinIO 删失败”怎么办？这就是 Session A 复盘题 3 说的分布式一致性问题。**本 Session 先实现选项 1（有文档就拒绝删除）**——最简单也最安全，Session C 再升级成 3 并讲一致性方案。
+选项 3 最完整，但“数据库删了、MinIO 删失败”怎么办？这就是 Session A 复盘题 3 说的分布式一致性问题。**本 Session 实现选项 1（有文档就拒绝删除）**——最简单也最安全，删除文档本身的一致性在 Session C 讲。
+
+> **2026-08-18 重构后**（见 [Session D](session-d-model-refactor-to-many-to-many.md)）：“有没有文档”的判断改为查关联表：`knowledge_base_document` 里这个知识库的关联数 > 0 就拒绝删除。
 
 Service 骨架（你补 TODO）：
 
@@ -90,7 +92,7 @@ public void delete(Long userId, Long id) {
         throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_NOT_FOUND);
     }
 
-    Long docCount = documentMapper.countByKnowledgeBaseId(id);   // TODO 你补 SQL：SELECT COUNT(*) FROM document WHERE knowledge_base_id=#{id}
+    Long docCount = knowledgeBaseDocumentMapper.countByKnowledgeBaseId(id);   // TODO 你补 SQL：SELECT COUNT(*) FROM knowledge_base_document WHERE knowledge_base_id=#{id}
     if (docCount > 0) {
         throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_HAS_DOCUMENTS);  // 加一个 409 错误码
     }
@@ -160,4 +162,3 @@ public KnowledgeBaseResponse update(Long userId, Long id, UpdateKnowledgeBaseReq
 4. `lambdaQuery` 和手写 `@Select` 你分别什么时候用？
 
 完成并全绿后，进入 [Session C](session-c-document-lifecycle.md)：文档生命周期。
-

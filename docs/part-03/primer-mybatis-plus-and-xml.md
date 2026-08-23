@@ -18,19 +18,14 @@
 
 ## 2. IService / ServiceImpl（你已经用过一半）
 
-Part 2 你让 `AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog>` 时其实已经用了它。完整套路是“接口 + 实现类”：
+Part 2 你让 `AuditLogService extends ServiceImpl<AuditLogMapper, AuditLog>` 时其实已经用了它。项目里我们**不写“接口 + 实现类”**，直接一个 `@Service` class 继承 `ServiceImpl<Mapper, T>`：
 
 ```java
-// 接口继承 IService<T>，获得通用方法
-public interface DocumentService extends IService<Document> {
-    DocumentResponse upload(...);   // 自定义方法照常声明
-}
-
-// 实现类继承 ServiceImpl<Mapper, T>
 @Service
-public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document>
-        implements DocumentService {
+public class DocumentService extends ServiceImpl<DocumentMapper, Document> {
     // 继承来的方法：save / saveBatch / getById / list / page / removeById / lambdaQuery ...
+    // 自定义业务方法直接写在这里
+    public DocumentResponse upload(...) { ... }
 }
 ```
 
@@ -46,7 +41,7 @@ lambdaQuery().eq(...).list();          // 条件查询
 count(wrapper);                        // 计数
 ```
 
-> 注意：控制器注入接口 `DocumentService`，Spring 会把 `DocumentServiceImpl` 装配进去。我们项目的 Service 大多直接注入 Mapper（因为业务规则在手写方法里更清晰），两种风格并存没问题，但要一致。
+> 注意：Controller 直接注入这个 `@Service` class（Spring 按类型装配）。不需要再为每个 Service 写接口——接口在“一个实现可能换多个（Mock、多实现）或跨模块暴露契约”时才值得；业务规则在手写方法里更清晰，直接 class 够用且少一层样板代码。全项目保持一致。
 
 ---
 
@@ -224,4 +219,3 @@ XML（`src/main/resources/com/github/comui520/learnhub/knowledge/mapper/Document
 - [ ] XML 和接口怎么关联？`namespace` 和 `<select id>` 分别对什么？
 - [ ] `<if test="...">` 解决什么问题？
 - [ ] 什么时候该用 XML，什么时候用 Wrapper，什么时候用 `@Select`？
-

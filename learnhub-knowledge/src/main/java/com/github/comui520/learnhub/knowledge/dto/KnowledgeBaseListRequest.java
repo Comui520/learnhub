@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "知识库列表请求")
+@Schema(name = "KnowledgeBaseListRequest", description = "知识库列表请求")
 public record KnowledgeBaseListRequest (
         @Min(value = 1, message = "Page number must be greater than or equal to 1")
         @Schema(description = "页码", example = "1")

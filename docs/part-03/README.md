@@ -21,6 +21,7 @@
 | [A](session-a-minio-and-upload.md) | MinIO 接入 + 建表 + 知识库创建 + 文件上传 | 🧑‍🏫 我带 |
 | [B](session-b-knowledge-base-crud.md) | 知识库剩余 CRUD（列表/详情/改/删）+ 数据隔离 | 🤝 各写一半 + 🏃 你自己做 |
 | [C](session-c-document-lifecycle.md) | 文档状态机、下载/删除、去重与一致性 | 🧑‍🏫 带概念 + 🏃 自己做 |
+| [D](session-d-model-refactor-to-many-to-many.md) | **模型重构**：document 拆分 document_file + knowledge_base_document | 🧑‍🏫 助手代工 |
 
 ## 3. 固定约定
 
@@ -40,6 +41,10 @@
 - [ ] 删除知识库时，其下文档记录和 MinIO 对象的处理有明确设计（Session C）。
 - [ ] `mvn clean verify` 全绿。
 
+> **2026-08-18 更新**：数据模型已重构为“文件本体 + 多对多关联”两表结构（[Session D](session-d-model-refactor-to-many-to-many.md)）。验收清单里涉及 `document` 的表述，现在对应 `document_file`（文件本体）与 `knowledge_base_document`（归属关联）两张表。
+>
+> **2026-08-19 更新**：上传与绑定已分离——`POST /api/v1/document` 只建文件，`bind-document` / `unbind-document` 负责知识库归属（解绑 = 全部解绑后重绑保留的），删除是文件级级联。**最终模型以 [Session D](session-d-model-refactor-to-many-to-many.md) 为准**，Session A/B/C 保留为历史教学记录。
+
 ## 5. 答辩题预告（Session C 结束前能答）
 
 1. 为什么文件要存对象存储而不是本地磁盘？
@@ -47,7 +52,7 @@
 3. SHA-256 去重怎么实现的？为什么不直接比文件名？
 4. 上传文件时“先查重 → 传 MinIO → 建记录”中间任何一步失败，怎么保证一致性？
 5. 用户数据隔离为什么要在 SQL 层做，而不是只靠 Controller 判断？
-6. 删除知识库时，数据库记录和 MinIO 对象怎么保持一致？
+6. 删除知识库时，数据库记录和 MinIO 对象怎么保持一致？（重构后：删关联 → 无引用才删文件 + 对象）
 
 > 开始前或做到 Session B 时，先读 [前置教学：MyBatis-Plus 高级用法与 XML Mapper](primer-mybatis-plus-and-xml.md)——列表分页、条件查询、XML 动态 SQL 都会用到。
 

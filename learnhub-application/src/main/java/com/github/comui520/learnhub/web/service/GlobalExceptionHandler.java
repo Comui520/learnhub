@@ -4,6 +4,7 @@ import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.common.exception.BusinessException;
 import com.github.comui520.learnhub.common.exception.CommonErrorCode;
 import com.github.comui520.learnhub.common.exception.ErrorCode;
+import io.minio.errors.MinioException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -72,6 +73,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
+    @ExceptionHandler(MinioException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMinioException(
+            MinioException exception
+    ) {
+        log.error("Minio exception", exception);
+
+        ApiResponse<Void> body = ApiResponse.failure(CommonErrorCode.INTERNAL_ERROR);
+        return ResponseEntity.internalServerError().body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(
             Exception exception
@@ -81,4 +92,5 @@ public class GlobalExceptionHandler {
         ApiResponse<Void> body = ApiResponse.failure(CommonErrorCode.INTERNAL_ERROR);
         return ResponseEntity.internalServerError().body(body);
     }
+
 }

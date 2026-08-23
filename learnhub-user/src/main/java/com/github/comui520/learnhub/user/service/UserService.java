@@ -1,6 +1,6 @@
 package com.github.comui520.learnhub.user.service;
 
-import com.baomidou.mybatisplus.spring.service.IService;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.github.comui520.learnhub.common.exception.BusinessException;
 import com.github.comui520.learnhub.user.UserErrorCode;
 import com.github.comui520.learnhub.user.dto.UserResponse;
@@ -12,9 +12,26 @@ import java.util.List;
 import java.util.Objects;
 
 @Service
-public interface UserService extends IService<User> {
+public class UserService extends ServiceImpl<UserMapper, User> {
 
-    public UserResponse findById(Long id);
+    private final UserMapper userMapper;
 
-    public List<UserResponse> userList();
+    public UserService(UserMapper userMapper) {
+        this.userMapper = userMapper;
+    }
+
+    public UserResponse findById(Long id) {
+        User user = userMapper.selectById(id);
+        if (Objects.isNull(user)) {
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
+        }
+        return new UserResponse(user.getId(), user.getUsername(), user.getNickname());
+    }
+
+    public List<UserResponse> userList() {
+        return userMapper.selectList(null)
+                .stream()
+                .map(user -> new UserResponse(user.getId(), user.getUsername(), user.getNickname()))
+                .toList();
+    }
 }

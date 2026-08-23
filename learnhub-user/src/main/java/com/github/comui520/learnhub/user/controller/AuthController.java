@@ -7,7 +7,6 @@ import com.github.comui520.learnhub.user.dto.TokenResponse;
 import com.github.comui520.learnhub.user.dto.UserResponse;
 import com.github.comui520.learnhub.user.service.AuditLogService;
 import com.github.comui520.learnhub.user.service.AuthService;
-import com.github.comui520.learnhub.user.service.impl.AuthServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,10 +24,8 @@ public class AuthController {
 
     private final AuthService authService;
 
-    public AuthController(
-            AuthServiceImpl authServiceImpl
-    ){
-        this.authService = authServiceImpl;
+    public AuthController(AuthService authService) {
+        this.authService = authService;
     }
 
     @PostMapping("/register")

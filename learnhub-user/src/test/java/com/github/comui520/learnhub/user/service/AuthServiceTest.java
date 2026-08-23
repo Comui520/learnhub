@@ -5,7 +5,9 @@ import com.github.comui520.learnhub.user.UserErrorCode;
 import com.github.comui520.learnhub.user.dto.RegisterRequest;
 import com.github.comui520.learnhub.user.dto.UserResponse;
 import com.github.comui520.learnhub.user.entity.User;
+import com.github.comui520.learnhub.user.mapper.RoleMapper;
 import com.github.comui520.learnhub.user.mapper.UserMapper;
+import com.github.comui520.learnhub.user.mapper.UserRoleMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,6 +28,12 @@ public class AuthServiceTest {
     private UserMapper userMapper;
 
     @Mock
+    private UserRoleMapper userRoleMapper;
+
+    @Mock
+    private RoleMapper roleMapper;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @InjectMocks
@@ -35,6 +43,7 @@ public class AuthServiceTest {
     void shouldEncodePasswordAndInsertUserWhenUsernameIsFree(){
         given(userMapper.selectByUsername("learnhub")).willReturn(null);
         given(passwordEncoder.encode("password123")).willReturn("encodedPassword");
+        given(roleMapper.selectIdByCode("USER")).willReturn(1L);
 
         UserResponse userResponse = authService.register(new RegisterRequest("learnhub", "password123"));
 
