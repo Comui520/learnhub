@@ -95,6 +95,9 @@ public class DocumentParseConsumer {
                     .set(DocumentFile::getStatus, DocumentStatus.COMPLETED.getStatus()));
 
             task.setStatus(DocumentTaskStatus.SUCCESS.getStatus());
+            // Clear stale error details after a successful retry.
+            task.setLastError(null);
+            task.setUpdatedAt(LocalDateTime.now());
             documentTaskMapper.updateById(task);
 
         } catch (Exception e) {

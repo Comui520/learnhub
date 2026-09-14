@@ -231,6 +231,8 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
             throw new BusinessException(KnowledgeErrorCode.TASK_STATUS_NOT_FAILED);
         }
         task.setStatus(DocumentTaskStatus.PENDING.getStatus());
+        // A new retry starts without the previous failure message.
+        task.setLastError(null);
         task.setUpdatedAt(LocalDateTime.now());
         task.setRetryCount(0);
         documentTaskMapper.updateById(task);
