@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>LearnHub Chat 测试</title>
+</head>
+<body>
+<h1>LearnHub Chat 测试</h1>
+<p>知识库 ID <input id="kbId" value="1"></p>
+<p>Token <input id="token" size="70" placeholder="粘贴 JWT"></p>
+<p>用户名 <input id="username" value="learnhub"> 密码 <input id="password" type="password" value="password123"> <button onclick="login()">登录并填入 Token</button></p>
+<p>问题 <input id="question" size="70" value="增量下载股票数据是什么指令?"> <button onclick="send()">发送</button> <button onclick="clearLog()">清空</button></p>
+<hr>
+<pre id="log"></pre>
+<script>
+const logEl = document.getElementById('log');
+function append(text) { logEl.textContent += text + '\n'; }
+
+async function login() {
+  const resp = await fetch('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: document.getElementById('username').value,
+      password: document.getElementById('password').value
+    })
+  });
+  const json = await resp.json();
+  if (json.code === 'COMMON_0000') {
+    document.getElementById('token').value = json.data.token;
+    append('登录成功，token 已填入');
+  } else {
+    append('登录失败: ' + json.message);
+  }
+}
+
+async function send() {
+  const kbId = document.getElementById('kbId').value;
+  const token = document.getElementById('token').value.trim();
+  const question = document.getElementById('question').value;
+  append('--- 发送问题: ' + question + ' ---');
+  const resp = await fetch('/api/v1/knowledge-bases/' + kbId + '/chat', {
+    method: 'POST',
+    headers: {
+      'accept': 'text/event-stream',
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ question: question })
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    append('HTTP ' + resp.status + ': ' + text);
+    return;
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, idx).replace(/\r$/, '');
+      buffer = buffer.slice(idx + 1);
+      if (line === '') continue;
+      if (line.startsWith('event:')) {
+        append('[' + line.slice(6).trim() + ']');
+      } else if (line.startsWith('data:')) {
+        append('  ' + line.slice(5).trim());
+      }
+    }
+  }
+  append('--- 流结束 ---');
+}
+
+function clearLog() { logEl.textContent = ''; }
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: learnhub
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:learnhub}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:learnhub}
+    password: ${MYSQL_PASSWORD:change-me-mysql}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 45MB
+  rabbitmq:
+    port: ${RABBITMQ_PORT:5672}
+    host: ${RABBITMQ_HOST:localhost}
+    username: ${RABBITMQ_DEFAULT_USER:learnhub}
+    password: ${RABBITMQ_DEFAULT_PASS:change-me-rabbitmq}
+
+  ai:
+    openai:
+      api-key: ${API_KEY:}
+      base-url: ${BASE_URL:https://api.siliconflow.cn}
+      chat:
+        options:
+          model: ${CHAT_MODEL:glm-4.7-flash}
+      embedding:
+        options:
+          model: ${EMBEDDING_MODEL:BAAI/bge-m3}
+
+    vectorstore:
+      qdrant:
+        port: ${QDRANT_GRPC_PORT:6334}
+        host: ${QDRANT_HOST:localhost}
+        collection-name: ${QDRANT_COLLECTION_NAME:learnhub_docs}
+
+logging:
+  level:
+    com.github.comui520.learnhub: DEBUG
+
+learnhub:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-in-production-0123456789}
+    expiration: 3600000
+
+
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+    access-key: ${MINIO_ROOT_USER:learnhub}
+    secret-key: ${MINIO_ROOT_PASSWORD:change-me-minio-please}
+    bucket: ${MINIO_BUCKET:learnhub-docs}
+
+  redis:
+    kb:
+      kb-detail-key: "kb:detail:"
+      kb-df-key: "kb:df:"
+      kb-df-kb-key: "kb:df:kb:"
+    user:
+      us-lg-at-key: "us:lg:at:"
+      us-lg-fl-key: "us:lg:fl:"
+    ai:
+      ai-chat-key: "ai:chat:"
+    study:
+      std-qst-opt-key: "std:qst:opt:"
+      expire: 3600
+
+  login:
+    attempt:
+      max-failures: 5
+      lock-duration: 15m

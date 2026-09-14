@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: learnhub
+
+server:
+  port: 9090

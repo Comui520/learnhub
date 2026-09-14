@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.comui520.learnhub.credit.mapper.OrderMapper">
+
+    <update id="updateStatusByOrderNo">
+        UPDATE `credit_order`
+        SET status = #{to}
+        WHERE order_no = #{orderNo}
+          AND status = #{from}
+    </update>
+    <update id="markPaid">
+        UPDATE credit_order
+        SET paid_at = #{paidAt}
+        WHERE order_no = #{orderNo}
+    </update>
+    <update id="closeOrder">
+        UPDATE credit_order
+        SET status='CLOSED'
+        WHERE status='CREATED' AND expire_at &lt; now()
+    </update>
+</mapper>

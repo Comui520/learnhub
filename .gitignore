@@ -1,0 +1,36 @@
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE metadata
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+*.iml
+
+# Build output and generated files
+**/target/
+**/build/
+**/out/
+*.class
+*.jar
+*.war
+
+# Logs and local runtime data
+*.log
+**/logs/
+.local/
+.local-backups/
+
+# Nested repository metadata kept only for local history backups
+**/.git-backup/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
