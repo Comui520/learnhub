@@ -11,7 +11,7 @@ spring:
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:learnhub}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USER:learnhub}
-    password: ${MYSQL_PASSWORD:1234}
+    password: ${MYSQL_PASSWORD:change-me-mysql}
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
     enabled: true
@@ -23,11 +23,11 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     host: ${RABBITMQ_HOST:localhost}
     username: ${RABBITMQ_DEFAULT_USER:learnhub}
-    password: ${RABBITMQ_DEFAULT_PASS:1234}
+    password: ${RABBITMQ_DEFAULT_PASS:change-me-rabbitmq}
 
   ai:
     openai:
-      api-key: ${API_KEY:123}
+      api-key: ${API_KEY:}
       base-url: ${BASE_URL:https://api.siliconflow.cn}
       chat:
         options:
@@ -48,14 +48,14 @@ logging:
 
 learnhub:
   jwt:
-    secret: ${JWT_SECRET:ZGV2LW9ubHktand0LXNlY3JldC1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi0wMTIzNDU2Nzg5}
+    secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-in-production-0123456789}
     expiration: 3600000
 
 
   minio:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     access-key: ${MINIO_ROOT_USER:learnhub}
-    secret-key: ${MINIO_ROOT_PASSWORD:123456789}
+    secret-key: ${MINIO_ROOT_PASSWORD:change-me-minio-please}
     bucket: ${MINIO_BUCKET:learnhub-docs}
 
   redis:

@@ -66,7 +66,10 @@ public class StudyController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（STUDY_0001）")
     })
     @PostMapping("/question/{knowledgeBaseId}/generate")
-    public ApiResponse<List<StudyQuestionView>> generateQuestion(GenerateStudyQuestionRequest request, @PathVariable Long knowledgeBaseId) {
+    public ApiResponse<List<StudyQuestionView>> generateQuestion(
+            @Valid @RequestBody GenerateStudyQuestionRequest request,
+            @PathVariable Long knowledgeBaseId
+    ) {
         return ApiResponse.success(studyService.generateQuestion(request, knowledgeBaseId));
     }
 }

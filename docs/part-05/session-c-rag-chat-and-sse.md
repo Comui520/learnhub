@@ -323,6 +323,19 @@ data: 面向切面编程...
 
 看日志 `hits=N`。如果问 A 库的问题命中了 B 库的片段，说明过滤条件没生效——重点检查 `filterExpression` 和 metadata 里的字段名是否一致（`fileId` 大小写、类型）。
 
+### 7.5 业务错误与 SSE 的 Accept
+
+Chat 在真正开始输出模型内容前，会先完成知识库归属、限流和额度检查。此时还没有开始写 SSE，因此错误应保留正确的 HTTP 状态码。
+
+| Accept | 状态 | 响应 |
+|---|---:|---|
+| application/json 或 */* | 402/429/404 | 普通 ApiResponse JSON |
+| text/event-stream | 402/429/404 | event:error，data 是 ApiResponse JSON |
+
+模型流已经开始后，HTTP 状态码不能再修改；此时只能继续发送 SSE error 事件。这是 HTTP 流式响应生命周期的限制。
+
+PowerShell 7 建议使用 curl.exe -N 验收 SSE。Swagger UI 可查看定义，但不适合展示持续输出，看到 Undocumented / response status is 200 不等于接口失败。
+
 ## 8. 🏃 你来做：相似度阈值
 
 `SearchRequest` 支持 `.similarityThreshold(0.5)`：低于阈值的片段不算命中。加一个合适的阈值，再验证“资料里完全没有的内容”会命中 0 条而不是硬凑。

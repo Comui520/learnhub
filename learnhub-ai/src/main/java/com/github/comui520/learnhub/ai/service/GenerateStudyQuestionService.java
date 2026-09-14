@@ -20,7 +20,6 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.HashSet;
 import java.util.List;
@@ -52,7 +51,7 @@ public class GenerateStudyQuestionService {
         this.chatClient = chatClientBuilder.build();
     }
 
-    public List<GeneratedStudyQuestion> generateStudyQuestions(@RequestBody GenerateStudyQuestionRequest request, Long knowledgeBaseId, Long userId) {
+    public List<GeneratedStudyQuestion> generateStudyQuestions(GenerateStudyQuestionRequest request, Long knowledgeBaseId, Long userId) {
 
         List<Long> fileIds = knowledgeBaseService.listBoundFileIds(userId, knowledgeBaseId);
         if (fileIds.isEmpty()) {

@@ -263,6 +263,18 @@ documentTaskMapper.updateById(task);
 
 验证：把一条任务改成 FAILED → 调 retry 接口 → 任务重新被消费 → SUCCESS。status 是 RUNNING 时调 retry → 409。
 
+### 4.1 状态和错误信息必须保持一致
+
+`last_error` 表示最近一次失败的诊断信息，不是永久日志。状态转换时要遵守以下约定：
+
+```text
+FAILED  -> PENDING：清空 last_error，准备一次新的尝试
+RUNNING -> SUCCESS：清空 last_error，表示本次成功
+RUNNING -> FAILED ：写入本次异常信息
+```
+
+否则会出现 `status = SUCCESS` 但 `last_error` 仍然保存旧错误的矛盾数据，前端和运维人员会误判任务状态。
+
 ## 5. 任务列表接口：XML + 分页（🏃 你做，primer 派上用场）
 
 需求：`GET /api/v1/knowledge-bases/{kbId}/tasks?status=&page=1&size=10`，返回该知识库的任务列表（含文档文件名），支持状态筛选和分页，只能看自己的数据。
