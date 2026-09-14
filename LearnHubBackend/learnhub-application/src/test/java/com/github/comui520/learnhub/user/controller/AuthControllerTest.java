@@ -7,6 +7,8 @@ import com.github.comui520.learnhub.user.UserErrorCode;
 import com.github.comui520.learnhub.user.dto.RegisterRequest;
 import com.github.comui520.learnhub.user.dto.UserResponse;
 import com.github.comui520.learnhub.user.mapper.UserMapper;
+import com.github.comui520.learnhub.user.mapper.UserRoleMapper;
+import com.github.comui520.learnhub.user.security.JwtTokenTool;
 import com.github.comui520.learnhub.user.service.AuthService;
 import com.github.comui520.learnhub.web.service.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,13 @@ public class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    // WebMvcTest 仍会创建 JwtAuthenticationFilter；为其依赖提供测试替身。
+    @MockitoBean
+    private JwtTokenTool jwtTokenTool;
+
+    @MockitoBean
+    private UserRoleMapper userRoleMapper;
 
     @Test
     void shouldReturnUserWhenRegisterSucceeds() throws Exception {

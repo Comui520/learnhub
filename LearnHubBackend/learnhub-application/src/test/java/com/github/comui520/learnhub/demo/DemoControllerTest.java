@@ -7,6 +7,8 @@ import com.github.comui520.learnhub.demo.GreetingService;
 import com.github.comui520.learnhub.demo.dto.GreetingRequest;
 import com.github.comui520.learnhub.demo.dto.GreetingResponse;
 import com.github.comui520.learnhub.web.service.GlobalExceptionHandler;
+import com.github.comui520.learnhub.user.mapper.UserRoleMapper;
+import com.github.comui520.learnhub.user.security.JwtTokenTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -33,6 +35,13 @@ public class DemoControllerTest {
     // mockitoBean是用来模拟GreetingService的
     @MockitoBean
     private GreetingService greetingService;
+
+    // WebMvcTest 仍会创建 JwtAuthenticationFilter；关闭过滤器执行不等于不创建 Bean。
+    @MockitoBean
+    private JwtTokenTool jwtTokenTool;
+
+    @MockitoBean
+    private UserRoleMapper userRoleMapper;
 
     @Autowired
     private ObjectMapper objectMapper;
