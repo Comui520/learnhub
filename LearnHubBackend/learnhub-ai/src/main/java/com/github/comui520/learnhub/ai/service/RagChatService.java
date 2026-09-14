@@ -1,5 +1,7 @@
 package com.github.comui520.learnhub.ai.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.comui520.learnhub.ai.utils.VectorUtil;
 import com.github.comui520.learnhub.knowledge.service.KnowledgeBaseService;
 import lombok.extern.slf4j.Slf4j;
@@ -23,17 +25,20 @@ public class RagChatService {
     private final VectorStore vectorStore;
     private final KnowledgeBaseService knowledgeBaseService;
     private final VectorUtil vectorUtil;
+    private final ObjectMapper objectMapper;
 
     public RagChatService(
             ChatClient.Builder chatClientBuilder,
             VectorStore vectorStore,
             KnowledgeBaseService knowledgeBaseService,
-            VectorUtil vectorUtil
+            VectorUtil vectorUtil,
+            ObjectMapper objectMapper
     ) {
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.knowledgeBaseService = knowledgeBaseService;
         this.vectorUtil = vectorUtil;
+        this.objectMapper = objectMapper;
     }
 
     /** 检索 + 组装 + 流式回答，SSE 事件流：先 references，再逐段 content */
@@ -115,21 +120,38 @@ public class RagChatService {
     }
 
     private String buildReferencesJson(List<Document> hits) {
-        // 把 fileName + chunkIndex 拼成 JSON 数组字符串，前端用来展示引用
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < hits.size(); i++) {
-            if (i > 0) {
-                sb.append(",");
-            }
-            String fileName = String.valueOf(hits.get(i).getMetadata().get("fileName"));
-            Object rawIndex = hits.get(i).getMetadata().get("chunkIndex");
-            Long chunkIndex = rawIndex instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(rawIndex));
-            sb.append("{\"fileName\":\"")
-                    .append(fileName)
-                    .append("\",\"chunkIndex\":")
-                    .append(chunkIndex)
-                    .append("}");
+        List<Reference> references = hits.stream()
+                .map(hit -> new Reference(
+                        String.valueOf(hit.getMetadata().getOrDefault("fileName", "unknown")),
+                        readChunkIndex(hit)
+                ))
+                .toList();
+        try {
+            return objectMapper.writeValueAsString(references);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize chat references", e);
         }
-        return sb.append("]").toString();
+    }
+
+    private long readChunkIndex(Document document) {
+        Object rawIndex = document.getMetadata().get("chunkIndex");
+        if (rawIndex == null) {
+            rawIndex = document.getMetadata().get("chunk_index");
+        }
+        if (rawIndex instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawIndex == null) {
+            return -1L;
+        }
+        try {
+            return Long.parseLong(String.valueOf(rawIndex));
+        } catch (NumberFormatException e) {
+            log.warn("invalid chunk index metadata: {}", rawIndex);
+            return -1L;
+        }
+    }
+
+    private record Reference(String fileName, long chunkIndex) {
     }
 }

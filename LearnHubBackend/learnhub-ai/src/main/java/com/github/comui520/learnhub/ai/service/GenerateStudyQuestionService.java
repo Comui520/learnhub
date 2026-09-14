@@ -11,7 +11,6 @@ import com.github.comui520.learnhub.ai.utils.VectorUtil;
 import com.github.comui520.learnhub.common.exception.BusinessException;
 import com.github.comui520.learnhub.knowledge.KnowledgeErrorCode;
 import com.github.comui520.learnhub.knowledge.service.KnowledgeBaseService;
-import com.github.comui520.learnhub.user.CurrentUser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
@@ -39,7 +38,6 @@ public class GenerateStudyQuestionService {
     public GenerateStudyQuestionService(
             KnowledgeBaseService knowledgeBaseService,
             VectorStore vectorStore,
-            CurrentUser currentUser,
             ObjectMapper objectMapper,
             VectorUtil vectorUtil,
             ChatClient.Builder chatClientBuilder

@@ -13,7 +13,6 @@ import com.github.comui520.learnhub.knowledge.mq.DocumentParseMessage;
 import com.github.comui520.learnhub.knowledge.service.DocumentParseService;
 import com.github.comui520.learnhub.knowledge.service.VectorIndexService;
 import io.minio.GetObjectArgs;
-import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -125,18 +124,17 @@ public class DocumentParseConsumer {
         if (file == null) {
             throw new IllegalStateException("File not found: " + fileId);
         }
-        InputStream inputStream = minioClient.getObject(
+        try (InputStream inputStream = minioClient.getObject(
                 GetObjectArgs.builder()
                         .bucket(minioProperties.getBucket())
                         .object(file.getObjectName())
-                        .build()
-        );
-
-        return documentParseService.parseAndChunk(
-                fileId,
-                file.getUserId(),
-                file.getFileName(),
-                inputStream
-        );
+                        .build())) {
+            return documentParseService.parseAndChunk(
+                    fileId,
+                    file.getUserId(),
+                    file.getFileName(),
+                    inputStream
+            );
+        }
     }
 }

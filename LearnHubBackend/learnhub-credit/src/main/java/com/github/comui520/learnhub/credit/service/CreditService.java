@@ -127,16 +127,11 @@ public class CreditService extends ServiceImpl<CreditAccountMapper, CreditAccoun
     }
 
     private CreditAccount ensureAccount(Long userId) {
-        CreditAccount account = accountMapper.selectOne(
+        // 依赖 uk_user_id，保证并发首次使用时只创建一条账户记录。
+        accountMapper.insertIfAbsent(userId);
+        return accountMapper.selectOne(
                 new LambdaQueryWrapper<CreditAccount>()
                         .eq(CreditAccount::getUserId, userId));
-        if (account == null) {
-            account = new CreditAccount();
-            account.setUserId(userId);
-            account.setBalance(BigDecimal.ZERO);
-            accountMapper.insert(account);
-        }
-        return account;
     }
 
     private CreditOrderResponse toResponse(CreditOrder order) {

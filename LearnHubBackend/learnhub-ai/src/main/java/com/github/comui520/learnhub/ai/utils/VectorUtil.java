@@ -12,9 +12,10 @@ public class VectorUtil {
         for (Document hit : hits) {
             String fileName = String.valueOf(hit.getMetadata().get("fileName"));
             Object rawIndex = hit.getMetadata().get("chunkIndex");
-            long chunkIndex = rawIndex instanceof Number number
-                    ? number.longValue()
-                    : Long.parseLong(String.valueOf(rawIndex));
+            if (rawIndex == null) {
+                rawIndex = hit.getMetadata().get("chunk_index");
+            }
+            long chunkIndex = toChunkIndex(rawIndex);
             contextBuilder.append("【来源：")
                     .append(fileName)
                     .append(" 第")
@@ -24,5 +25,19 @@ public class VectorUtil {
                     .append("\n\n");
         }
         return contextBuilder.toString();
+    }
+
+    private long toChunkIndex(Object rawIndex) {
+        if (rawIndex instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawIndex == null) {
+            return -1L;
+        }
+        try {
+            return Long.parseLong(String.valueOf(rawIndex));
+        } catch (NumberFormatException e) {
+            return -1L;
+        }
     }
 }

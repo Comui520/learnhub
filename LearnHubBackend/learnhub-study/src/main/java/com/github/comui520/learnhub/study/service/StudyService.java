@@ -27,7 +27,9 @@ import com.github.comui520.learnhub.user.CurrentUser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
     private final StudyRedisProperties studyRedisProperties;
     private final ObjectMapper objectMapper;
     private final GenerateStudyQuestionService generateService;
+    private final TransactionTemplate transactionTemplate;
 
     public StudyService(
             StudyQuestionMapper questionMapper,
@@ -62,7 +65,8 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             GenerateStudyQuestionService generateService,
-            StudyRedisProperties studyRedisProperties
+            StudyRedisProperties studyRedisProperties,
+            PlatformTransactionManager transactionManager
     ) {
         this.questionMapper = questionMapper;
         this.attemptMapper = attemptMapper;
@@ -73,6 +77,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
         this.objectMapper = objectMapper;
         this.studyRedisProperties = studyRedisProperties;
         this.redisTemplate = redisTemplate;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     public StudyQuestionView getQuestionView(Long questionId) {
@@ -254,42 +259,37 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
     }
 
 
-    @Transactional
     public List<StudyQuestionView> generateQuestion(GenerateStudyQuestionRequest request, Long knowledgeBaseId) {
         Long userId = currentUser.currentUserId();
 
-
+        // 模型调用发生在事务外，避免网络延迟长期占用数据库连接。
         List<GeneratedStudyQuestion> generatedList = generateService.generateStudyQuestions(request, knowledgeBaseId, userId);
+        List<StudyQuestionView> persisted = transactionTemplate.execute(status ->
+                persistGeneratedQuestions(generatedList, userId, knowledgeBaseId));
+        return persisted == null ? List.of() : persisted;
+    }
 
-
+    private List<StudyQuestionView> persistGeneratedQuestions(
+            List<GeneratedStudyQuestion> generatedList,
+            Long userId,
+            Long knowledgeBaseId
+    ) {
         List<StudyQuestionView> viewList = new ArrayList<>(generatedList.size());
-
-        List<StudyQuestion> questionList = generatedList.stream().map(g -> {
-            return new StudyQuestion(
-                    null,
-                    userId,
-                    knowledgeBaseId,
-                    g.questionType(),
-                    g.content(),
-                    g.analysis(),
-                    LocalDateTime.now()
-            );
-        }).toList();
+        LocalDateTime now = LocalDateTime.now();
+        List<StudyQuestion> questionList = generatedList.stream().map(g -> new StudyQuestion(
+                null, userId, knowledgeBaseId, g.questionType(), g.content(), g.analysis(), now
+        )).toList();
 
         questionMapper.insert(questionList);
 
-        for (int i = 0; i < generatedList.size(); i++){
+        for (int i = 0; i < generatedList.size(); i++) {
             StudyQuestion question = questionList.get(i);
             List<GeneratedStudyOption> options = generatedList.get(i).options();
-            List<StudyQuestionOption> optionList = options.stream().map(option -> {
-                return new StudyQuestionOption(
-                        null,
-                        question.getId(),
-                        option.key(),
-                        option.content(),
-                        option.correct() ? 1 : 0
-                );
-            }).toList();
+            List<StudyQuestionOption> optionList = options.stream()
+                    .map(option -> new StudyQuestionOption(
+                            null, question.getId(), option.key(), option.content(), option.correct() ? 1 : 0
+                    ))
+                    .toList();
             questionOptionMapper.insert(optionList);
             viewList.add(toQuestionView(question, optionList));
         }
