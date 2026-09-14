@@ -153,32 +153,71 @@ LIMIT 5;                          -- topK
 Qdrant 里过滤的是 payload（每个 chunk 的元数据）。`FilterExpressionBuilder` 把 Java 代码翻译成 Qdrant 能懂的过滤表达式：
 
 ```java
+String[] fileIdStrings = fileIds.stream().map(String::valueOf).toArray(String[]::new);
 FilterExpressionBuilder b = new FilterExpressionBuilder();
-Filter.Expression filter = b.in("fileId", fileIds).build();
-// 相当于 SQL：WHERE file_id IN (1,2,3)
+Filter.Expression filter = b.in("fileId", fileIdStrings).build();
+// 相当于 SQL：WHERE file_id IN ('1','2','3')
 ```
 
 常用的就两个：
 
 ```java
-b.in("fileId", List.of(1L, 2L))   // 字段值在列表里（本项目用这个）
-b.eq("userId", 1L)                // 等于（以后做别的过滤用）
+b.in("fileId", fileIdStrings)   // 字段值在字符串数组里（本项目用）
+b.in("userId", "1")            // 等于（以后做别的过滤用）
 ```
 
 `Filter.Expression` 就是构造器产出的“过滤表达式对象”，`SearchRequest` 要求这个类型，仅此而已。
+
+> ⚠️ 为什么是字符串？Spring AI 写 Qdrant 时把 Long metadata 序列化成了字符串，payload 里是 `"fileId":"10"` 而不是数字，所以过滤也必须传字符串 `"10"`。
 
 ### 4.3 为什么用 fileId 过滤，而不是 knowledgeBaseId
 
 Session A 讲过：一个文件可以绑定多个知识库，向量里**故意不存 kbId**。所以检索时：
 
 1. 先从 MySQL 查出“这个库绑定了哪些文件”的 `fileId` 列表（`listBoundFileIds`）；
-2. 再用 `in("fileId", fileIds)` 过滤。
+2. 把 fileId 列表转成 `String[]`，再用 `in("fileId", fileIdStrings)` 过滤。
 
 这就是多对多模型下的数据隔离：问 A 库，只搜 A 库绑定的那些文件。
 
 ### 4.4 过滤不生效怎么排查
 
 metadata 里的 key 必须和 FilterExpressionBuilder 里的字符串**完全一致**（大小写、类型）。比如 Session B 里存的是 `"fileId"`，过滤写 `"fileId"`，别写 `"file_id"`。排查方法：Qdrant 控制台点开一条 point 看 payload，对照着检查。
+
+最常见的“过滤不生效”是**类型不匹配**：payload 里 `"fileId": "10"`（字符串），过滤器却传数字 `10`，一个都搜不到。所以检索前要 `map(String::valueOf)` 转成字符串数组。
+
+### 4.5 最常见的坑：直接传 List 会报 “Unsupported value in IN value list”
+
+`FilterExpressionBuilder` 有两个 `in` 重载：`in(String, List<Object>)` 和 `in(String, Object...)`。
+直接写 `b.in("fileId", fileIds)` 时，因为 `List<Long>` 不能严格匹配 `List<Object>`，Java 会选中**可变参数版本**，
+结果是“参数是一个元素，这个元素恰好是那个 List”——Qdrant 收到 `[[1,2,3]]`，第一个元素不是 String/Number，直接抛异常。
+
+所以必须**把元素展开**再传：
+
+```java
+// ✅ 正确：展开成数组 + 转成字符串（Qdrant payload 里 fileId 是字符串）
+String[] fileIds = fileIdList.stream().map(String::valueOf).toArray(String[]::new);
+b.in("fileId", fileIds)
+
+// ❌ 错误1：整个 List 被当成一个元素（重载陷阱）
+b.in("fileId", fileIdList)
+
+// ❌ 错误2：展开了但类型不匹配——payload 是 "10"，过滤器传 10，还是搜不到
+b.in("fileId", fileIdList.toArray())
+```
+
+另外 Qdrant 要求 IN 列表**不能为空**（空列表同样报错）。查完绑定关系后先判空，空库直接返回空引用，不构造查询。
+
+> 这个坑的排查信号：接口显示 401（SSE 接口的错误响应写不出去时会被安全链兜住），实际日志是
+> `java.lang.RuntimeException: Unsupported value in IN value list. Only supports String or Number`。
+
+### 4.6 读取 metadata 时注意反序列化类型
+
+Qdrant 把数值 metadata 读回来时是 `Long`。比如 `hit.getMetadata().get("chunkIndex")` 的实际类型是 `Long`，强转 `Integer` 会抛 `ClassCastException`。写入和读取要统一：
+
+- 写入（Session A 的 `DocumentParseService`）：`chunk.metadata("chunkIndex", (long) i)`
+- 读取（Session C）：`Long chunkIndex = (Long) hit.getMetadata().get("chunkIndex")`
+
+`fileName` 这类字符串 metadata 没有这个问题，直接 `(String)` 即可。
 
 ## 5. 把 Session C 的 streamChat 串一遍
 
@@ -188,8 +227,10 @@ metadata 里的 key 必须和 FilterExpressionBuilder 里的字符串**完全一
 // ① 取该库绑定的 fileId（内部校验归属）—— WHERE 的数据来源
 List<Long> fileIds = knowledgeBaseService.listBoundFileIds(userId, knowledgeBaseId);
 
-// ② 构造“SELECT ... WHERE file_id IN (...) LIMIT 5”
-Filter.Expression filter = new FilterExpressionBuilder().in("fileId", fileIds).build();
+// ② 构造“SELECT ... WHERE file_id IN ('1','2',...) LIMIT 5”
+//    Qdrant payload 里 fileId 是字符串，所以先转成 String[]
+String[] fileIdStrings = fileIds.stream().map(String::valueOf).toArray(String[]::new);
+Filter.Expression filter = new FilterExpressionBuilder().in("fileId", fileIdStrings).build();
 SearchRequest searchRequest = SearchRequest.builder()
         .query(question)
         .topK(5)
@@ -200,6 +241,7 @@ List<Document> hits = vectorStore.similaritySearch(searchRequest);   // 执行�
 // ③ 没有命中 → 不调模型，发个空引用事件就结束（防幻觉 + 省钱）
 
 // ④ 拼 Prompt：把命中片段按“【来源：xx 第 n 块】+ 正文”拼起来
+//    注意：Qdrant 读回的 chunkIndex 是 Long，强转 Long，别用 Integer
 
 // ⑤ 引用事件：Flux.just(一个事件) —— 先发
 Flux<ServerSentEvent<String>> referencesEvent = Flux.just(...);

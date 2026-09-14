@@ -8,6 +8,8 @@
 
 给你的 AI 问答加上**商业化闭环**：用户有额度，每次提问扣一次；并发下不会多扣、不会欠账；充值走模拟订单，支付回调重复调用只入账一次。整套东西用 Redis 撑起缓存、限流、原子扣减——这是面试里“高并发”最常问的一块。
 
+> 定位提醒：本 Part 的主线是**额度 + 订单并发**，Redis 缓存只是教学入口。先用“知识库详情缓存”练熟 Cache Aside，再在 Session A 的升级题里把同一模式用到 chat 热路径（缓存 fileIds）。优化不是目标，学会“什么时候缓存、什么时候删缓存”才是。
+
 ## 1. 本 Part 新增的技术（第一次见面，先认识）
 
 | 技术 | 是干嘛的 | 依赖怎么写 |
@@ -24,7 +26,7 @@
 | 文档 | 主题 | 档位 |
 |---|---|---|
 | [primer](primer-redis-and-concurrency.md) | Redis 数据结构 + 缓存模式 + 分布式锁 + Lua + 幂等 + BigDecimal（零基础） | 🧑🏫 阅读 |
-| [Session A](session-a-redis-cache.md) | 接入 Redis + 缓存知识库（Cache Aside） | 🧑🏫 我带 |
+| [Session A](session-a-redis-cache.md) | 接入 Redis + 缓存知识库（Cache Aside）+ 升级题：缓存 chat 的 fileIds | 🧑🏫 我带 |
 | [Session B](session-b-rate-limit-and-credit.md) | 限流 + 额度表 + 原子扣减（Lua） | 🧑🏫 概念 + 🤝 代码 |
 | [Session C](session-c-order-and-idempotency.md) | 模拟订单 + 支付回调幂等 + 定时关单 | 🧑🏫 概念 + 🤝 代码 |
 
@@ -45,7 +47,7 @@
 - [ ] 额度流水能完整还原余额变化。
 - [ ] 同一支付回调重复调用 N 次，只入账一次、订单状态只 PAID 一次。
 - [ ] 超时订单能自动关闭，不占用额度。
-- [ ] `mvn compile` 全绿。
+- [x] `mvn compile` 全绿（Controller、Service、Mapper、Schedule 当前已通过编译；并发与接口验收仍待完成）。
 
 ## 5. 答辩题预告
 

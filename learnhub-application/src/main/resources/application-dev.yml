@@ -3,6 +3,11 @@ server:
 spring:
   application:
     name: learnhub
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:learnhub}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USER:learnhub}
@@ -52,3 +57,22 @@ learnhub:
     access-key: ${MINIO_ROOT_USER:learnhub}
     secret-key: ${MINIO_ROOT_PASSWORD:123456789}
     bucket: ${MINIO_BUCKET:learnhub-docs}
+
+  redis:
+    kb:
+      kb-detail-key: "kb:detail:"
+      kb-df-key: "kb:df:"
+      kb-df-kb-key: "kb:df:kb:"
+    user:
+      us-lg-at-key: "us:lg:at:"
+      us-lg-fl-key: "us:lg:fl:"
+    ai:
+      ai-chat-key: "ai:chat:"
+    study:
+      std-qst-opt-key: "std:qst:opt:"
+      expire: 3600
+
+  login:
+    attempt:
+      max-failures: 5
+      lock-duration: 15m

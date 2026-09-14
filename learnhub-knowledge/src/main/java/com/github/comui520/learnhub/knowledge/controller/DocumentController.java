@@ -3,7 +3,6 @@ package com.github.comui520.learnhub.knowledge.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.common.dto.PageParam;
-import com.github.comui520.learnhub.knowledge.dto.DocumentListRequest;
 import com.github.comui520.learnhub.knowledge.dto.DocumentResponse;
 import com.github.comui520.learnhub.knowledge.entity.DocumentFile;
 import com.github.comui520.learnhub.knowledge.service.DocumentService;
@@ -22,7 +21,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
-import java.util.List;
 
 @Tag(name = "Documents", description = "文档")
 @RestController

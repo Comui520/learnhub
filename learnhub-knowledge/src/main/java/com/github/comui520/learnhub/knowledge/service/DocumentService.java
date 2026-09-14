@@ -15,12 +15,10 @@ import com.github.comui520.learnhub.knowledge.dto.DocumentResponse;
 import com.github.comui520.learnhub.knowledge.dto.DocumentRow;
 import com.github.comui520.learnhub.knowledge.entity.DocumentFile;
 import com.github.comui520.learnhub.knowledge.entity.DocumentTask;
-import com.github.comui520.learnhub.knowledge.entity.KnowledgeBase;
 import com.github.comui520.learnhub.knowledge.entity.KnowledgeBaseDocument;
 import com.github.comui520.learnhub.knowledge.mapper.DocumentFileMapper;
 import com.github.comui520.learnhub.knowledge.mapper.DocumentTaskMapper;
 import com.github.comui520.learnhub.knowledge.mapper.KnowledgeBaseDocumentMapper;
-import com.github.comui520.learnhub.knowledge.mapper.KnowledgeBaseMapper;
 import com.github.comui520.learnhub.knowledge.mq.DocumentParseMessage;
 import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
@@ -29,15 +27,12 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.errors.MinioException;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.swing.text.Document;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
@@ -61,6 +56,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
     private final RabbitTemplate rabbitTemplate;
     private final DocumentTaskMapper documentTaskMapper;
     private final VectorIndexService vectorIndexService;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     public DocumentService(
             DocumentFileMapper documentFileMapper,
@@ -69,9 +65,9 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
             MinioProperties minioProperties,
             RabbitTemplate rabbitTemplate,
             DocumentTaskMapper documentTaskMapper,
-            VectorIndexService vectorIndexService
+            VectorIndexService vectorIndexService,
 
-    ) {
+            KnowledgeBaseService knowledgeBaseService) {
         this.documentFileMapper = documentFileMapper;
         this.knowledgeBaseDocumentMapper = knowledgeBaseDocumentMapper;
         this.minioClient = minioClient;
@@ -79,6 +75,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
         this.rabbitTemplate = rabbitTemplate;
         this.documentTaskMapper = documentTaskMapper;
         this.vectorIndexService = vectorIndexService;
+        this.knowledgeBaseService = knowledgeBaseService;
     }
 
     @Transactional
@@ -159,13 +156,10 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
         );
     }
 
+    // 删除文档
     @Transactional
     public void deleteById(Long userId, Long documentId) {
         getOwnedFile(userId, documentId);
-
-        // ① 删关联：删“这个库里的这条文档”，永远成功
-        knowledgeBaseDocumentMapper.delete(new LambdaQueryWrapper<KnowledgeBaseDocument>()
-                .eq(KnowledgeBaseDocument::getFileId, documentId));
 
         // ② 没有其他知识库再引用这个文件，才删文件记录 + MinIO 对象
         if (knowledgeBaseDocumentMapper.countByFileId(documentId) == 0) {
@@ -185,6 +179,8 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
                 // 尽力而为：记录留着让补偿任务处理，删除接口不 500
                 log.error("MinIO object delete failed, need compensation: object={}", file.getObjectName(), e);
             }
+        } else {
+            throw new BusinessException(KnowledgeErrorCode.DOCUMENT_STILL_REFERENCED);
         }
     }
 

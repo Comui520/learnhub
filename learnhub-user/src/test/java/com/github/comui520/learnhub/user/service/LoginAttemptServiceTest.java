@@ -1,6 +1,7 @@
 package com.github.comui520.learnhub.user.service;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
 
@@ -8,9 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 
 public class LoginAttemptServiceTest {
+
+    private LoginAttemptService service;
+
     @Test
     public void shouldLockWhenMaxFailuresExceeded() {
-        LoginAttemptService service = new LoginAttemptService(3, Duration.ofSeconds(15L));
         service.recordFailure("user1");
         service.recordFailure("user1");
         service.recordFailure("user1");
@@ -20,7 +23,6 @@ public class LoginAttemptServiceTest {
 
     @Test
     public void shouldUnlockAfterTimeout() throws InterruptedException {
-        LoginAttemptService service = new LoginAttemptService(3, Duration.ofMillis(15L));
         service.recordFailure("user2");
         service.recordFailure("user2");
         service.recordFailure("user2");
@@ -31,7 +33,6 @@ public class LoginAttemptServiceTest {
 
     @Test
     public void shouldUnlockImmediatelyAfterReset(){
-        LoginAttemptService service = new LoginAttemptService(3, Duration.ofMillis(15L));
         service.recordFailure("user3");
         service.recordFailure("user3");
         service.recordFailure("user3");

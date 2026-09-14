@@ -134,7 +134,7 @@ for (int i = 0; i < chunks.size(); i++) {
     Document chunk = chunks.get(i);
     chunks.set(i, chunk.mutate()            // Document 是不可变类，没有 setId，用 mutate() 重建
             .id(UUID.nameUUIDFromBytes((fileId + "-" + i).getBytes()).toString())  // 稳定 UUID
-            .metadata("chunkIndex", i)      // 顺手把序号也放进 metadata
+            .metadata("chunkIndex", (long) i)  // 顺手把序号也放进 metadata（统一 Long，Qdrant 读回是 Long）
             .build());
 }
 ```

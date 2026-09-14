@@ -19,6 +19,11 @@
             <artifactId>learnhub-common</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.github.comui520</groupId>
+            <artifactId>learnhub-infrastructure</artifactId>
+        </dependency>
+
         <!-- 1) 暂时去掉 learnhub-infrastructure 依赖 -->
         <!-- 原因：infrastructure 带着 Redis/AMQP/MinIO/Qdrant 的自动配置，
              现在一个都用不上。按需接入，等 Part 4 需要 RabbitMQ 时再加回来。 -->

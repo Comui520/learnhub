@@ -1,9 +1,9 @@
 package com.github.comui520.learnhub.ai.service;
 
+import com.github.comui520.learnhub.ai.utils.VectorUtil;
 import com.github.comui520.learnhub.knowledge.service.KnowledgeBaseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.DefaultChatClientBuilder;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -22,15 +22,18 @@ public class RagChatService {
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final KnowledgeBaseService knowledgeBaseService;
+    private final VectorUtil vectorUtil;
 
     public RagChatService(
-            ChatClient.Builder chatClientBUilder,
+            ChatClient.Builder chatClientBuilder,
             VectorStore vectorStore,
-            KnowledgeBaseService knowledgeBaseService
+            KnowledgeBaseService knowledgeBaseService,
+            VectorUtil vectorUtil
     ) {
-        this.chatClient = chatClientBUilder.build();
+        this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
         this.knowledgeBaseService = knowledgeBaseService;
+        this.vectorUtil = vectorUtil;
     }
 
     /** 检索 + 组装 + 流式回答，SSE 事件流：先 references，再逐段 content */
@@ -38,12 +41,26 @@ public class RagChatService {
         // ① 取该库绑定的文件 id（内部已校验归属，别人的库直接 404）
         List<Long> fileIds = knowledgeBaseService.listBoundFileIds(userId, knowledgeBaseId);
 
-        // ② 检索：按 fileId 过滤，取最相似的 5 块
+        String[] fileIdStrings = fileIds.stream().map(String::valueOf).toArray(String[]::new);
+        // ② 空库：没有可检索的资料，不调模型，直接返回空引用事件
+        if (fileIds.isEmpty()) {
+            log.info("chat: kbId={}, userId={}, no bound files", knowledgeBaseId, userId);
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("references")
+                    .data("[]")
+                    .build());
+        }
+
+        // ③ 检索：按 fileId 过滤，取最相似的 5 块
+        // ⚠️ 不能直接 .in("fileId", fileIds)：会命中可变参数重载，把整个 List 当成一个元素，
+        //    Qdrant 报 "Unsupported value in IN value list. Only supports String or Number"；
+        //    传 toArray() 才能让每个 fileId 成为独立元素。
         Filter.Expression filter = new FilterExpressionBuilder()
-                .in("fileId", fileIds)
+                .in("fileId", fileIdStrings)
                 .build();
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
+                .similarityThreshold(0.4)
                 .topK(5)
                 .filterExpression(filter)
                 .build();
@@ -51,32 +68,22 @@ public class RagChatService {
 
         log.info("chat: kbId={}, userId={}, hits={}", knowledgeBaseId, userId, hits.size());
 
-        // ③ 没有检索到任何资料：不调模型，直接告诉用户
+        // ④ 没有检索到任何资料：不调模型，直接告诉用户
         if (hits.isEmpty()) {
             return Flux.just(ServerSentEvent.<String>builder()
                     .event("references")
                     .data("[]")
                     .build());
         }
-        // ④ 组装 Prompt
-        StringBuilder fragments = new StringBuilder();
-        for (Document hit : hits) {
-            String fileName = (String) hit.getMetadata().get("fileName");
-            Integer chunkIndex = (Integer) hit.getMetadata().get("chunkIndex");
-            fragments.append("【来源：")
-                    .append(fileName)
-                    .append(" 第")
-                    .append(chunkIndex)
-                    .append("块】\n")
-                    .append(hit.getText())
-                    .append("\n\n");
-        }
+        // ⑤ 组装 Prompt
+        String fragments = vectorUtil.buildContext(hits);
+
 
         String system = "你是一个严谨的知识库助手。只根据用户提供的资料片段回答；"
                 + "如果资料中没有相关信息，直接回答“资料中没有相关信息”，不要编造。";
         String userPrompt = fragments + "问题：" + question;
 
-        // ⑤ 引用事件（先发）
+        // ⑥ 引用事件（先发）
         String referencesJson = buildReferencesJson(hits);
         Flux<ServerSentEvent<String>> referencesEvent = Flux.just(
                 ServerSentEvent.<String>builder()
@@ -85,7 +92,7 @@ public class RagChatService {
                         .build()
         );
 
-        // ⑥ 内容流（逐 token 发）
+        // ⑦ 内容流（逐 token 发）
         Flux<ServerSentEvent<String>> contentStream = chatClient
                 .prompt()
                 .system(system)
@@ -95,7 +102,14 @@ public class RagChatService {
                 .map(token -> ServerSentEvent.<String>builder()
                         .event("content")
                         .data(token)
-                        .build());
+                        .build())
+                .onErrorResume(e -> {
+                    log.error("chat model stream failed: kbId={}", knowledgeBaseId, e);
+                    return Flux.just(ServerSentEvent.<String>builder()
+                            .event("error")
+                            .data("模型调用失败，请稍后重试")
+                            .build());
+                });
 
         return Flux.concat(referencesEvent, contentStream);
     }
@@ -108,7 +122,8 @@ public class RagChatService {
                 sb.append(",");
             }
             String fileName = String.valueOf(hits.get(i).getMetadata().get("fileName"));
-            Integer chunkIndex = (Integer) hits.get(i).getMetadata().get("chunkIndex");
+            Object rawIndex = hits.get(i).getMetadata().get("chunkIndex");
+            Long chunkIndex = rawIndex instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(rawIndex));
             sb.append("{\"fileName\":\"")
                     .append(fileName)
                     .append("\",\"chunkIndex\":")

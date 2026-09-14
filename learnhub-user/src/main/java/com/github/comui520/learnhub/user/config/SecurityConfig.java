@@ -49,7 +49,9 @@ public class SecurityConfig {
                                 "/actuator/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**"
+                                "/v3/api-docs/**",
+                                "/chat-test.html",
+                                "/api/v1/credit/payments/notify"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(

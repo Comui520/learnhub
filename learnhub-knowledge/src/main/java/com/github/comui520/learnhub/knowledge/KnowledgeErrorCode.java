@@ -9,7 +9,9 @@ public enum KnowledgeErrorCode implements ErrorCode {
     DUPLICATE_DOCUMENT("DOC_ERROR_0409", "Document already exists", 409),
     DOCUMENT_NOT_FOUND("DOC_ERROR_0404", "Document not found", 404),
     TASK_NOT_FOUND("TASK_ERROR_0404", "Task not found", 404),
-    TASK_STATUS_NOT_FAILED("TASK_ERROR_409", "Task status is not failed", 409);
+    TASK_STATUS_NOT_FAILED("TASK_ERROR_409", "Task status is not failed", 409),
+    DOCUMENT_STILL_REFERENCED("DOC_ERROR_0409", "Document is still referenced", 409),
+    USABLE_CONTENT_NOT_FOUND("USABLE_CONTENT_ERROR_0404", "Usable content not found", 404);
 
     private final String code;
     private final String message;

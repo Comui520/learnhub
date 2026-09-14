@@ -98,7 +98,7 @@ public class DocumentParseService {
 
         // ⑤ 给每块加序号（溯源时告诉用户“第几块”）
         for (int i = 0; i < chunks.size(); i++) {
-            chunks.get(i).getMetadata().put("chunkIndex", i);
+            chunks.get(i).getMetadata().put("chunkIndex", (long) i); // 用 Long：Qdrant 读回是 Long，Session C 强转 Long（见 primer 4.6）
         }
 
         log.info("parse done: fileId={}, chunks={}", fileId, chunks.size());

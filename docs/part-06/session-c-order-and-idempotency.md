@@ -119,14 +119,109 @@ int markPaid(@Param("orderNo") String orderNo, @Param("paidAt") LocalDateTime pa
 
 > 面试点：定时扫表 vs 消息延迟队列（RabbitMQ 延迟消息 / Redisson DelayedQueue）——数据量小定时扫表够用；量大了用延迟消息，避免频繁扫全表。
 
-## 5. Step 5：控制器（🏃 你来做）
+## 5. Step 5：Controller（已完成，逐段理解）
 
-两个接口，Swagger 标注 200/400/401/404/409：
+Controller 只做三件事：接收 HTTP 参数、拿当前用户 ID、调用 Service 并包装成 `ApiResponse`。订单状态变化和幂等判断全部留在 `CreditService`，不要把业务规则搬到 Controller。
 
-- `POST /api/v1/credit/orders`：body `(BigDecimal amount)` → 创建订单。
-- `POST /api/v1/credit/payments/notify`：body `(String orderNo, BigDecimal amount, String tradeNo)` → 处理回调。
+### 5.1 两个请求 DTO
 
-回调接口**不要带 `@SecurityRequirement`**（支付平台没有你的 JWT），其他接口照常鉴权。数据隔离：查订单/额度按 userId（老规矩）。
+创建订单和支付回调的请求结构不同，所以分别建两个 `record`：
+
+```java
+public record CreateCreditOrderRequest(
+        @NotNull
+        @DecimalMin(value = "0.01")
+        BigDecimal amount
+) {}
+
+public record PaymentNotifyRequest(
+        @NotBlank String orderNo,
+        @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
+        @NotBlank String tradeNo
+) {}
+```
+
+- `@NotNull` 防止 JSON 没有金额时进入 Service。
+- `@DecimalMin("0.01")` 防止 0 元或负数订单。
+- `@NotBlank` 防止订单号、第三方交易号为空。
+- `@Valid` 写在 Controller 的 `@RequestBody` 上，校验失败后交给全局异常处理器返回 `COMMON_0400`。
+
+### 5.2 Controller 的三个接口
+
+当前实现文件：`learnhub-credit/src/main/java/.../credit/controller/CreditController.java`。
+
+```java
+@RestController
+@RequestMapping("/api/v1/credit")
+public class CreditController {
+
+    @GetMapping("/balance")
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<BigDecimal> getBalance() {
+        return ApiResponse.success(
+                creditService.getBalance(currentUser.currentUserId())
+        );
+    }
+
+    @PostMapping("/orders")
+    @SecurityRequirement(name = "bearerAuth")
+    public ApiResponse<CreditOrderResponse> createOrder(
+            @Valid @RequestBody CreateCreditOrderRequest request
+    ) {
+        return ApiResponse.success(
+                creditService.createOrder(
+                        currentUser.currentUserId(), request.amount()
+                )
+        );
+    }
+
+    @PostMapping("/payments/notify")
+    public ApiResponse<Void> paymentNotify(
+            @Valid @RequestBody PaymentNotifyRequest request
+    ) {
+        creditService.handlePaymentNotify(
+                request.orderNo(), request.amount(), request.tradeNo()
+        );
+        return ApiResponse.success();
+    }
+}
+```
+
+### 5.3 为什么回调接口不需要 JWT
+
+订单创建是用户主动操作，必须知道“哪个登录用户创建订单”，所以需要 JWT。
+
+支付回调是支付平台调用，支付平台不会携带 LearnHub 用户的 JWT，因此不能把这个接口放在默认的 `authenticated()` 规则下。
+
+`SecurityConfig` 中要放行：
+
+```java
+.requestMatchers(
+        "/api/v1/auth/**",
+        "/api/v1/credit/payments/notify",
+        ...
+).permitAll()
+```
+
+当前只是模拟回调，所以没有真正的支付签名。生产系统不能只依赖“接口公开”：应该校验支付平台签名、商户号、订单号、金额、时间戳和交易号。这个项目把“回调幂等”作为本 Part 的重点，签名验签放到可选升级题。
+
+### 5.4 Swagger 里的状态码
+
+- 创建订单：`200`、`400`、`401`。
+- 查询余额：`200`、`401`。
+- 支付回调：`200`、`400`、`404`；重复回调也返回 `200`，因为它已经达到最终结果，不应该被客户端当成失败重试。
+
+### 5.5 现有 Service/Mapper/Schedule 检查结论
+
+当前代码可以编译，主流程也符合本 Session 的教学目标，但下面几个点要记到 Part 7 测试和升级清单里：
+
+1. `CreditService.grant` 是“查余额 → Java 加法 → update”，多个赠送请求并发时存在丢更新风险。当前支付回调通过订单状态条件更新挡住了大部分重复场景，但通用的 `grant` 仍建议改成条件更新或加锁。
+2. `consume` 的“先查流水再扣减”在同一个 `bizNo` 并发时可能有两个请求同时通过检查，最终依赖 `uk_biz_no` 兜底；更稳的做法是让业务唯一键和事务异常路径有明确测试。
+3. `handlePaymentNotify` 当前没有使用 `tradeNo`。模拟支付可以接受；真实支付应该保存交易号并校验回调签名，且交易号也应具备幂等约束。
+4. `OrderMapper.markPaid` 最好显式加 `@Param("orderNo")`、`@Param("paidAt")`，不要依赖编译参数保留方法名。返回值也可以从 `void` 改成 `int`，方便判断影响行数。
+5. `CreditSchedule` 的 `fixedRate = 30000` 适合当前单体和小数据量。未来多实例部署时，多个实例会同时扫描，但条件更新仍应保证同一订单只从 `CREATED` 变成 `CLOSED` 一次；更严格的方案是分布式调度或延迟队列。
+
+所以：Controller 已经完成；Part 6 还需要做接口验收、重复回调验证和额度并发验证，之后就可以正式进入 Part 7。
 
 ## 6. Step 6：验证
 

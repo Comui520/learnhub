@@ -64,7 +64,7 @@ public class DocumentParseService {
             Document chunk = chunks.get(i);
             chunks.set(i, chunk.mutate()
                     .id(UUID.nameUUIDFromBytes((fileId + "-" + i).getBytes()).toString())
-                    .metadata("chunkIndex", i)
+                    .metadata("chunkIndex", (long)i)
                     .build());
         }
 

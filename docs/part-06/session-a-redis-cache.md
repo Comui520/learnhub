@@ -93,8 +93,7 @@ public KnowledgeBaseResponse getById(Long userId, Long id) {
 
     // ② 缓存没命中 → 查库（原来的逻辑）
     KnowledgeBase kb = findOwned(userId, id);
-    KnowledgeBaseResponse response = new KnowledgeBaseResponse(
-            kb.getId(), kb.getName(), kb.getDescription(), kb.getCreatedAt());
+
 
     // ③ 回填缓存（60 秒过期）
     try {
@@ -117,21 +116,75 @@ public KnowledgeBaseResponse getById(Long userId, Long id) {
 
 > 面试点：为什么回填/读取失败都要降级？——因为缓存不是真相，MySQL 才是；缓存挂了业务不能挂。
 
-## 5. Step 5：更新/删除时删缓存
+## 5. Step 5：更新/删除时删缓存（关键！）
 
-`update` 和 `delete` 里，在数据库操作成功后删掉缓存：
+缓存只加在读路径上是不够的——改完 description 后，Redis 里还是旧值，用户会读到脏数据。所以**写路径必须删缓存**。
+
+打开 `KnowledgeBaseService`，在 `update` 方法里，`this.updateById(kb);` 之后加一行：
 
 ```java
-// update() 里
-this.updateById(kb);
-redis.delete(KB_CACHE_KEY + id);
-
-// delete() 里
-this.removeById(kb.getId());
-redis.delete(KB_CACHE_KEY + id);
+public KnowledgeBaseResponse update(Long userId, Long id, UpdateKnowledgeBaseRequest request) {
+    KnowledgeBase kb = findOwned(userId, id);
+    // 改名查重：排除自己
+    if (this.exists(new LambdaQueryWrapper<KnowledgeBase>()
+            .eq(KnowledgeBase::getUserId, userId)
+            .eq(KnowledgeBase::getName, request.name())
+            .ne(KnowledgeBase::getId, id))) {
+        throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_NAME_EXISTS);
+    }
+    kb.setName(request.name());
+    kb.setDescription(request.description());
+    this.updateById(kb);
+    redis.delete(KB_CACHE_KEY + id);   // ← 加这一行：先改库，再删缓存
+    return new KnowledgeBaseResponse(kb.getId(), kb.getName(), kb.getDescription(), kb.getCreatedAt());
+}
 ```
 
-顺序必须是**先改库、再删缓存**（primer 3 节讲过原因）。删缓存失败最多导致 60 秒旧数据，TTL 兜底。
+`delete` 方法同理，`this.removeById(kb.getId());` 之后加：
+
+```java
+@Transactional
+public void delete(Long userId, Long id) {
+    KnowledgeBase kb = findOwned(userId, id);
+    // 有文档先删文档（拒绝级联删除，避免孤儿记录）
+    if (knowledgeBaseDocumentMapper.countByKnowledgeBaseId(id) > 0) {
+        throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_HAS_DOCUMENTS);
+    }
+    this.removeById(kb.getId());
+    redis.delete(KB_CACHE_KEY + id);   // ← 加这一行
+}
+```
+
+要点：
+
+- **顺序必须是先改库、再删缓存**（primer 3 节讲过原因）。反过来会有并发读把旧值回填的窗口。
+- **删缓存失败最多导致 60 秒旧数据**，TTL 兜底，业务不受影响。
+- `redis` 和 `objectMapper` 在 Step 4 已经注入构造器，这里直接用同一个 `redis` 就行。
+- `create` 不需要删缓存（新 id 本来就没有缓存）；`page` 列表接口先不缓存（列表缓存失效点更多，属于升级题）。
+
+## 5.5 为什么先缓存“知识库详情”，而不是 chat 里的 fileIds？
+
+你可能会想：chat 每次都要查 `listBoundFileIds`，那才是热路径，为什么不先缓存它？
+
+|      | 知识库详情                 | listBoundFileIds   |
+| ---- | --------------------- | ------------------ |
+| 调用频率 | 详情页打开时                | **每次 chat 都调**（更热） |
+| 失效点  | 只有 update / delete 两处 | bind / unbind 两处   |
+| 数据形态 | 单条对象                  | 一个 id 列表           |
+| 教学价值 | 最经典的 Cache Aside 入门   | 同一模式，但失效点更多        |
+
+**Part 6 的主线是“额度 + 订单并发”，缓存只是教学入口**：先用最简单的“详情缓存”把 Cache Aside 模式练熟，再在升级题里把同一模式用到热路径。优化不是本 Part 的目标，学会“什么时候该缓存、什么时候该删”才是。
+
+## 5.6 升级题（推荐做）：缓存 chat 的 fileIds
+
+把 Cache Aside 用到热路径上。`RagChatService.streamChat` 每次提问都调 `listBoundFileIds`，里面查两次 MySQL（归属校验 + 关联表）。缓存只包住**关联表查询**，归属校验保持实时（安全优先，删库后立刻不能访问）。
+
+1. key 设计：`kb:files:1`（业务前缀 + 资源 + id），value 存 JSON 数组 `[5,6,7,8,9,10]`，TTL 60 秒。
+2. 读路径：`listBoundFileIds` 里先查缓存，命中直接反序列化返回；miss 才查关联表并回填。
+3. 失效点：`bindDocuments` 和 `unbindDocuments` 成功后，`redis.delete("kb:files:" + knowledgeBaseId)`。
+4. 验证：第一次 chat 日志有 `SELECT ... FROM knowledge_base_document`，第二次没有；bind/unbind 后缓存被删，再 chat 重新回填。
+
+> 提示：`listBoundFileIds` 里的 `findOwned` 不要缓存——归属校验必须实时，否则用户删库后还能靠缓存继续访问。
 
 ## 6. Step 6：验证
 

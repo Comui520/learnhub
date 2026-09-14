@@ -123,9 +123,21 @@ public class RagChatService {
         // ① 取该库绑定的文件 id（内部已校验归属，别人的库直接 404）
         List<Long> fileIds = knowledgeBaseService.listBoundFileIds(userId, knowledgeBaseId);
 
-        // ② 检索：按 fileId 过滤，取最相似的 5 块
+        String[] fileIdStrings = fileIds.stream().map(String::valueOf).toArray(String[]::new);
+
+        // ② 空库：没有可检索的资料，不调模型，直接返回空引用事件
+        if (fileIds.isEmpty()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("references")
+                    .data("[]")
+                    .build());
+        }
+
+        // ③ 检索：按 fileId 过滤，取最相似的 5 块
+        // ⚠️ Qdrant payload 里 fileId 是字符串（"10"），必须传 String[]；
+        //    直接传 List 会命中可变参数重载，把整个 List 当成一个元素，Qdrant 报 IN 类型错误。
         Filter.Expression filter = new FilterExpressionBuilder()
-                .in("fileId", fileIds)
+                .in("fileId", fileIdStrings)
                 .build();
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
@@ -136,7 +148,7 @@ public class RagChatService {
 
         log.info("chat: kbId={}, userId={}, hits={}", knowledgeBaseId, userId, hits.size());
 
-        // ③ 没有检索到任何资料：不调模型，直接告诉用户
+        // ④ 没有检索到任何资料：不调模型，直接告诉用户
         if (hits.isEmpty()) {
             return Flux.just(ServerSentEvent.<String>builder()
                     .event("references")
@@ -144,11 +156,11 @@ public class RagChatService {
                     .build());
         }
 
-        // ④ 组装 Prompt
+        // ⑤ 组装 Prompt
         StringBuilder fragments = new StringBuilder();
         for (Document hit : hits) {
             String fileName = (String) hit.getMetadata().get("fileName");
-            Integer chunkIndex = (Integer) hit.getMetadata().get("chunkIndex");
+            Long chunkIndex = (Long) hit.getMetadata().get("chunkIndex");
             fragments.append("【来源：")
                     .append(fileName)
                     .append(" 第")
@@ -162,7 +174,7 @@ public class RagChatService {
                 + "如果资料中没有相关信息，直接回答“资料中没有相关信息”，不要编造。";
         String userPrompt = fragments + "问题：" + question;
 
-        // ⑤ 引用事件（先发）
+        // ⑥ 引用事件（先发）
         String referencesJson = buildReferencesJson(hits);
         Flux<ServerSentEvent<String>> referencesEvent = Flux.just(
                 ServerSentEvent.<String>builder()
@@ -171,7 +183,7 @@ public class RagChatService {
                         .build()
         );
 
-        // ⑥ 内容流（逐 token 发）
+        // ⑦ 内容流（逐 token 发）
         Flux<ServerSentEvent<String>> contentStream = chatClient
                 .prompt()
                 .system(system)
@@ -194,7 +206,7 @@ public class RagChatService {
                 sb.append(",");
             }
             String fileName = String.valueOf(hits.get(i).getMetadata().get("fileName"));
-            Integer chunkIndex = (Integer) hits.get(i).getMetadata().get("chunkIndex");
+            Long chunkIndex = (Long) hits.get(i).getMetadata().get("chunkIndex");
             sb.append("{\"fileName\":\"")
                     .append(fileName)
                     .append("\",\"chunkIndex\":")
@@ -210,14 +222,15 @@ public class RagChatService {
 
 - `ChatClient.Builder` 是 starter 自动配置的，`chatClientBuilder.build()` 得到一个可以聊天的客户端。
 - **① fileIds**：先拿“这个库绑了哪些文件”。归属校验藏在 `listBoundFileIds` 里——用户 B 问 A 的库，这里直接 404。
-- **② 检索**：
-  - `new FilterExpressionBuilder().in("fileId", fileIds).build()`：过滤条件 = “fileId 在这批文件里”。这就是 Session A 说不存 knowledgeBaseId 的原因——多对多场景下，按“库绑定的文件集合”过滤最准确。
+- **② 空库**：先把 fileId 转成 `String[]`（Qdrant payload 里是字符串），再判空——没有绑定任何文件就不该检索（Qdrant 的 IN 也不能为空列表），直接返回空引用事件结束。
+- **③ 检索**：
+  - `new FilterExpressionBuilder().in("fileId", fileIdStrings).build()`：过滤条件 = “fileId 在这批文件里”。这就是 Session A 说不存 knowledgeBaseId 的原因——多对多场景下，按“库绑定的文件集合”过滤最准确。（⚠️ 两个坑：payload 里 fileId 是字符串 `"10"`，必须传 `String[]`；直接传 List 会命中可变参数重载把整个 List 当成一个元素。详见 primer 4.5）
   - `SearchRequest.builder().query(question).topK(5)`：问题会被自动向量化，搜最像的 5 块。`topK` 可以调（越大上下文越全越贵）。
   - `vectorStore.similaritySearch(searchRequest)`：返回 `List<Document>`，每个 Document 带 `getText()` 和 metadata。
-- **③ 空结果**：检索不到就不该调模型（省 token、防幻觉）。发一个空引用事件，前端提示“资料中没有相关内容”。
-- **④ Prompt**：把命中片段拼成“【来源：xxx 第 n 块】+ 正文”，再加上 system 提示。system 那句“没有就说没有，不要编造”是**对抗幻觉的关键**。
-- **⑤ 引用事件**：先把来源发出去（事件名 `references`），前端可以立刻显示“回答参考了 3 个片段”。
-- **⑥ 内容流**：`chatClient.prompt().system(...).user(...).stream().content()` 返回 `Flux<String>`，模型生成一个 token 推一个；`Flux.concat(referencesEvent, contentStream)` 保证“先引用、后内容”。
+- **④ 空结果**：检索不到就不该调模型（省 token、防幻觉）。发一个空引用事件，前端提示“资料中没有相关内容”。
+- **⑤ Prompt**：把命中片段拼成“【来源：xxx 第 n 块】+ 正文”，再加上 system 提示。注意 `chunkIndex` 从 Qdrant 读回是 `Long`，写入端（`DocumentParseService`）写 `(long) i`、读取端强转 `Long`，别用 `Integer`（否则 ClassCastException，见 primer 4.6）。system 那句“没有就说没有，不要编造”是**对抗幻觉的关键**。
+- **⑥ 引用事件**：先把来源发出去（事件名 `references`），前端可以立刻显示“回答参考了 3 个片段”。
+- **⑦ 内容流**：`chatClient.prompt().system(...).user(...).stream().content()` 返回 `Flux<String>`，模型生成一个 token 推一个；`Flux.concat(referencesEvent, contentStream)` 保证“先引用、后内容”。
 - `buildReferencesJson`：手工拼 JSON（字段少，够用；嫌丑可以用 Jackson 写一个引用 record，属于你自己的优化）。
 
 > 面试点：为什么检索为空就不调模型？——省成本 + 不编造。这是 RAG 应用的常识级设计。

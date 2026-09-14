@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.comui520.learnhub.common.api.ApiResponse;
 import com.github.comui520.learnhub.common.dto.PageParam;
 import com.github.comui520.learnhub.common.exception.BusinessException;
@@ -19,6 +21,7 @@ import com.github.comui520.learnhub.knowledge.mapper.DocumentTaskMapper;
 import com.github.comui520.learnhub.knowledge.mapper.KnowledgeBaseDocumentMapper;
 import com.github.comui520.learnhub.knowledge.mapper.KnowledgeBaseMapper;
 import com.github.comui520.learnhub.knowledge.mq.DocumentParseMessage;
+import com.github.comui520.learnhub.knowledge.redis.KnowledgeRedisProperties;
 import com.github.comui520.learnhub.user.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -26,6 +29,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -42,19 +47,27 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
     private final KnowledgeBaseDocumentMapper knowledgeBaseDocumentMapper;
     private final DocumentFileMapper documentFileMapper;
     private final RabbitTemplate rabbitTemplate;
-    private final CurrentUser currentUser;
     private final DocumentTaskMapper documentTaskMapper;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final KnowledgeRedisProperties knowledgeRedisProperties;
 
     public KnowledgeBaseService(
             KnowledgeBaseDocumentMapper knowledgeBaseDocumentMapper,
             DocumentFileMapper documentFileMapper,
             RabbitTemplate rabbitTemplate,
-            CurrentUser currentUser, DocumentTaskMapper documentTaskMapper) {
+            DocumentTaskMapper documentTaskMapper,
+            StringRedisTemplate stringRedisTemplate,
+            ObjectMapper objectMapper,
+            KnowledgeRedisProperties knowledgeRedisProperties
+    ) {
         this.knowledgeBaseDocumentMapper = knowledgeBaseDocumentMapper;
         this.documentFileMapper = documentFileMapper;
         this.rabbitTemplate = rabbitTemplate;
-        this.currentUser = currentUser;
         this.documentTaskMapper = documentTaskMapper;
+        this.redisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
+        this.knowledgeRedisProperties = knowledgeRedisProperties;
     }
 
     public IPage<DocumentTaskResponse> getTaskList(Long userId, Long knowledgeBaseId, Integer page, Integer size, String status) {
@@ -91,8 +104,31 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
     }
 
     public KnowledgeBaseResponse getById(Long userId, Long id) {
+        String cacheKey = knowledgeRedisProperties.getKbDetailKey() + id;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                return objectMapper.readValue(cached, KnowledgeBaseResponse.class);
+            } catch (Exception e) {
+                log.warn("cache parse failed, fallback to db: key={}", cacheKey, e);
+            }
+        }
         KnowledgeBase kb = findOwned(userId, id);
-        return new KnowledgeBaseResponse(kb.getId(), kb.getName(), kb.getDescription(), kb.getCreatedAt());
+
+        KnowledgeBaseResponse response = new KnowledgeBaseResponse(
+                kb.getId(), kb.getName(), kb.getDescription(), kb.getCreatedAt());
+
+        try {
+            redisTemplate.opsForValue().set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(response),
+                    60,
+                    TimeUnit.SECONDS
+            );
+        } catch (Exception e) {
+            log.warn("cache set failed: key={}", cacheKey, e);
+        }
+        return response;
     }
 
     public KnowledgeBaseResponse update(Long userId, Long id, UpdateKnowledgeBaseRequest request) {
@@ -107,6 +143,7 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
         kb.setName(request.name());
         kb.setDescription(request.description());
         this.updateById(kb);
+        redisTemplate.delete(knowledgeRedisProperties.getKbDetailKey() + id);
         return new KnowledgeBaseResponse(kb.getId(), kb.getName(), kb.getDescription(), kb.getCreatedAt());
     }
 
@@ -117,6 +154,7 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
         if (knowledgeBaseDocumentMapper.countByKnowledgeBaseId(id) > 0) {
             throw new BusinessException(KnowledgeErrorCode.KNOWLEDGE_BASE_HAS_DOCUMENTS);
         }
+        redisTemplate.delete(knowledgeRedisProperties.getKbDetailKey() + id);
         this.removeById(kb.getId());
     }
 
@@ -141,9 +179,10 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
         for (KnowledgeBaseDocument knowledgeBaseDocument : knowledgeBaseDocumentList) {
             sendParseMessage(knowledgeBaseDocument.getFileId());
         }
+        redisTemplate.delete(knowledgeRedisProperties.getKbDfKbKey() + knowledgeBaseId);
     }
 
-    private KnowledgeBase findOwned(Long userId, Long id) {
+    public KnowledgeBase findOwned(Long userId, Long id) {
         KnowledgeBase kb = this.lambdaQuery()
                 .eq(KnowledgeBase::getId, id)
                 .eq(KnowledgeBase::getUserId, userId)
@@ -169,6 +208,7 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
         knowledgeBaseDocumentMapper.delete(new LambdaQueryWrapper<KnowledgeBaseDocument>().eq(KnowledgeBaseDocument::getKnowledgeBaseId, knowledgeBaseId));
         // 加回来
         bindDocuments(userId, knowledgeBaseId, documentIds);
+        redisTemplate.delete(knowledgeRedisProperties.getKbDfKbKey() + knowledgeBaseId);
     }
 
     private void sendParseMessage(Long fileId) {
@@ -186,11 +226,23 @@ public class KnowledgeBaseService extends ServiceImpl<KnowledgeBaseMapper, Knowl
 
     public List<Long> listBoundFileIds(Long userId, Long knowledgeBaseId) {
         findOwned(userId, knowledgeBaseId);
-        return knowledgeBaseDocumentMapper.selectList(
+
+        // 尝试从缓存获取
+        String cacheKey = knowledgeRedisProperties.getKbDfKbKey() + knowledgeBaseId;
+        List<String> cached = redisTemplate.opsForList().range(cacheKey, 0, -1);
+
+        if (cached != null && !cached.isEmpty()) {
+            return cached.stream().map(Long::valueOf).toList();
+        }
+
+        // 缓存未命中，从数据库获取
+        List<Long> fileIds = knowledgeBaseDocumentMapper.selectList(
                         new LambdaQueryWrapper<KnowledgeBaseDocument>()
                                 .eq(KnowledgeBaseDocument::getKnowledgeBaseId, knowledgeBaseId)
                 ).stream()
                 .map(KnowledgeBaseDocument::getFileId)
                 .toList();
+        redisTemplate.opsForList().leftPushAll(cacheKey, fileIds.stream().map(String::valueOf).toList());
+        return fileIds;
     }
 }
