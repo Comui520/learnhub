@@ -32,6 +32,7 @@ Part 8 不做大规模重构，也不把项目改成微服务。当前项目定�
 | Session C | 事务、资源和并发 | TransactionTemplate、数据库唯一键、try-with-resources |
 | Session D | RAG 与 SSE 健壮性 | metadata 类型、JSON 序列化、Accept、error 事件 |
 | Session E | 交付和后续演进 | README、Git 历史、可继续学习的边界 |
+| [Session F](session-f-code-change-index.md) | 本次实际代码改动索引 | 文件路径、方法、原问题、改法、验证 |
 
 ## 2. 本 Part 已经完成的代码优化
 
