@@ -2,6 +2,8 @@ package com.github.comui520.learnhub.ai.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.comui520.learnhub.common.exception.CommonErrorCode;
+import com.github.comui520.learnhub.common.exception.ErrorCode;
 import com.github.comui520.learnhub.credit.CreditErrorCode;
 import com.github.comui520.learnhub.ai.dto.ChatRequest;
 import com.github.comui520.learnhub.ai.redis.AiRedisProperties;
@@ -73,7 +75,7 @@ public class ChatController {
     public ResponseEntity<?> chat(
             @PathVariable Long id,
             @Valid @RequestBody ChatRequest chatRequest,
-            jakarta.servlet.http.HttpServletRequest request
+            HttpServletRequest request
     ) {
         try {
             Long userId = currentUser.currentUserId();
@@ -100,13 +102,13 @@ public class ChatController {
             return errorResponse(exception.getErrorCode(), request);
         } catch (Exception exception) {
             log.error("Chat request failed before SSE stream started, knowledgeBaseId={}", id, exception);
-            return errorResponse(com.github.comui520.learnhub.common.exception.CommonErrorCode.INTERNAL_ERROR, request);
+            return errorResponse(CommonErrorCode.INTERNAL_ERROR, request);
         }
     }
 
     private ResponseEntity<?> errorResponse(
-            com.github.comui520.learnhub.common.exception.ErrorCode errorCode,
-            jakarta.servlet.http.HttpServletRequest request
+            ErrorCode errorCode,
+            HttpServletRequest request
     ) {
         String data;
         try {
