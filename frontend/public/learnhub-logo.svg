@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">LearnHub logo</title>
+  <desc id="desc">A simple blue knowledge path forming an L and an open page</desc>
+  <rect width="128" height="128" rx="30" fill="#171817"/>
+  <path d="M36 29v56c0 8 6 14 14 14h42" fill="none" stroke="#fffdfa" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M51 42h25M51 58h18" fill="none" stroke="#3157e8" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="91" cy="84" r="7" fill="#f16b52"/>
+</svg>
