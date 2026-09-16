@@ -4,4 +4,33 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.github.comui520.learnhub.study.mapper.StudyQuestionMapper">
 
+    <resultMap id="StudyQuestionViewMap" type="com.github.comui520.learnhub.study.dto.StudyQuestionView">
+        <id property="id" column="id"/>
+        <result property="knowledgeBaseId" column="knowledge_base_id"/>
+        <result property="questionType" column="question_type"/>
+        <result property="content" column="content"/>
+        <collection property="options" ofType="com.github.comui520.learnhub.study.dto.StudyOptionResponse" javaType="java.util.List">
+            <result property="optionKey" column="option_key"/>
+            <result property="content" column="sqo_content"/>
+        </collection>
+    </resultMap>
+
+
+    <select id="selectQuestionViews" resultMap="StudyQuestionViewMap">
+        select sq.id,
+        sq.knowledge_base_id,
+        sq.question_type,
+        sq.content,
+        sqo.option_key,
+        sqo.content sqo_content
+        from `study_question` sq
+        left join `study_question_option` sqo
+        on sq.id = sqo.question_id
+        where sq.knowledge_base_id = #{knowledgeBaseId}
+        and sq.user_id = #{userId}
+        <if test="questionType != null and questionType != ''">
+            and sq.question_type = #{questionType}
+        </if>
+        order by sq.created_at desc, sqo.option_key
+    </select>
 </mapper>

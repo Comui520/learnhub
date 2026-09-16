@@ -1,6 +1,8 @@
 package com.github.comui520.learnhub.study.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,11 +11,10 @@ import com.github.comui520.learnhub.ai.dto.GeneratedStudyOption;
 import com.github.comui520.learnhub.ai.dto.GeneratedStudyQuestion;
 import com.github.comui520.learnhub.ai.service.GenerateStudyQuestionService;
 import com.github.comui520.learnhub.common.exception.BusinessException;
+import com.github.comui520.learnhub.knowledge.service.KnowledgeBaseService;
 import com.github.comui520.learnhub.study.OptionTypeEnum;
 import com.github.comui520.learnhub.study.StudyErrorCode;
-import com.github.comui520.learnhub.study.dto.StudyAnswerResponse;
-import com.github.comui520.learnhub.study.dto.StudyOptionResponse;
-import com.github.comui520.learnhub.study.dto.StudyQuestionView;
+import com.github.comui520.learnhub.study.dto.*;
 import com.github.comui520.learnhub.study.entity.StudyAttempt;
 import com.github.comui520.learnhub.study.entity.StudyQuestion;
 import com.github.comui520.learnhub.study.entity.StudyQuestionOption;
@@ -24,6 +25,7 @@ import com.github.comui520.learnhub.study.mapper.StudyQuestionOptionMapper;
 import com.github.comui520.learnhub.study.mapper.StudyWrongQuestionMapper;
 import com.github.comui520.learnhub.study.redis.StudyRedisProperties;
 import com.github.comui520.learnhub.user.CurrentUser;
+import jakarta.validation.constraints.NotNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -55,6 +57,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
     private final ObjectMapper objectMapper;
     private final GenerateStudyQuestionService generateService;
     private final TransactionTemplate transactionTemplate;
+    private final KnowledgeBaseService knowledgeBaseService;
 
     public StudyService(
             StudyQuestionMapper questionMapper,
@@ -66,6 +69,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
             ObjectMapper objectMapper,
             GenerateStudyQuestionService generateService,
             StudyRedisProperties studyRedisProperties,
+            KnowledgeBaseService knowledgeBaseService,
             PlatformTransactionManager transactionManager
     ) {
         this.questionMapper = questionMapper;
@@ -77,6 +81,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
         this.objectMapper = objectMapper;
         this.studyRedisProperties = studyRedisProperties;
         this.redisTemplate = redisTemplate;
+        this.knowledgeBaseService = knowledgeBaseService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -108,7 +113,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
         );
 
         if (options != null && !options.isEmpty()) {
-            try{
+            try {
                 List<String> jsonOptions = options.stream()
                         .map(option -> {
                             try {
@@ -121,7 +126,7 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
                 redisTemplate.opsForList().rightPushAll(key, jsonOptions);
                 redisTemplate.expire(key, studyRedisProperties.getExpire(), TimeUnit.SECONDS);
                 return toQuestionView(question, options);
-            } catch (Exception e){
+            } catch (Exception e) {
                 log.warn("convert question option to json failed", e);
             }
             return toQuestionView(question, options);
@@ -218,6 +223,13 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
                 correctKeys,
                 question.getAnalysis()
         );
+    }
+
+    public IPage<StudyQuestionView> getQuestionViews(QuestionViewPageRequest request) {
+        Long userId = currentUser.currentUserId();
+        knowledgeBaseService.findOwned(userId, request.getKnowledgeBaseId());
+        Page<StudyQuestionView> page = new Page<>(request.getPage(), request.getSize());
+        return questionMapper.selectQuestionViews(page, userId, request.getKnowledgeBaseId(), request.getQuestionType());
     }
 
     private StudyQuestion findOwnedQuestion(Long questionId, Long userId) {
@@ -330,5 +342,74 @@ public class StudyService extends ServiceImpl<StudyQuestionMapper, StudyQuestion
                 question.getContent(),
                 optionResponses
         );
+    }
+
+    public QuestionDetail getQuestionDetail(Long questionId) {
+        Long userId = currentUser.currentUserId();
+        StudyQuestion studyQuestion = questionMapper.selectOne(
+                new LambdaQueryWrapper<StudyQuestion>()
+                        .eq(StudyQuestion::getId, questionId)
+                        .eq(StudyQuestion::getUserId, userId)
+        );
+        if (studyQuestion == null)
+            throw new BusinessException(StudyErrorCode.QUESTION_NOT_FOUND);
+        List<StudyQuestionOption> studyQuestionOption = questionOptionMapper.selectList(
+                new LambdaQueryWrapper<StudyQuestionOption>()
+                        .eq(StudyQuestionOption::getQuestionId, questionId)
+        );
+
+        return toQuestionDetail(studyQuestion, studyQuestionOption);
+    }
+
+    private QuestionDetail toQuestionDetail(StudyQuestion question, List<StudyQuestionOption> options) {
+        return new QuestionDetail(
+                question.getQuestionType(),
+                question.getContent(),
+                question.getAnalysis(),
+                options.stream().map(option -> new OptionDetail(
+                        option.getOptionKey(),
+                        option.getContent(),
+                        option.getIsCorrect() == 1
+                )).toList()
+        );
+    }
+
+    @Transactional
+    public void deleteQuestion(Long questionId) {
+        Long userId = currentUser.currentUserId();
+        int rows = questionMapper.delete(new LambdaQueryWrapper<StudyQuestion>()
+                .eq(StudyQuestion::getId, questionId)
+                .eq(StudyQuestion::getUserId, userId)
+        );
+        if (rows == 0)
+            throw new BusinessException(StudyErrorCode.QUESTION_NOT_FOUND);
+        questionOptionMapper.delete(new LambdaQueryWrapper<StudyQuestionOption>()
+                .eq(StudyQuestionOption::getQuestionId, questionId)
+        );
+        wrongQuestionMapper.delete(new LambdaQueryWrapper<StudyWrongQuestion>()
+                .eq(StudyWrongQuestion::getQuestionId, questionId)
+        );
+    }
+
+    @Transactional
+    public void deleteQuestionBatch(List<Long> ids) {
+        Long userId = currentUser.currentUserId();
+        List<Long> ownedIds = questionMapper.selectList(
+                new LambdaQueryWrapper<StudyQuestion>()
+                        .select(StudyQuestion::getId)
+                        .in(StudyQuestion::getId, ids)
+                        .eq(StudyQuestion::getUserId, userId)
+        ).stream().map(StudyQuestion::getId).toList();
+        if (ownedIds.isEmpty())
+            throw new BusinessException(StudyErrorCode.QUESTION_NOT_FOUND);
+
+        questionOptionMapper.delete(
+                new LambdaQueryWrapper<StudyQuestionOption>()
+                        .in(StudyQuestionOption::getQuestionId, ownedIds)
+        );
+        wrongQuestionMapper.delete(new LambdaQueryWrapper<StudyWrongQuestion>()
+                .in(StudyWrongQuestion::getQuestionId, ownedIds)
+        );
+        questionMapper.deleteByIds(ownedIds);
     }
 }

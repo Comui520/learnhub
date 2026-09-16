@@ -1,23 +1,16 @@
 package com.github.comui520.learnhub.study.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.github.comui520.learnhub.ai.dto.GenerateStudyQuestionRequest;
 import com.github.comui520.learnhub.common.api.ApiResponse;
-import com.github.comui520.learnhub.study.dto.StudyAnswerResponse;
-import com.github.comui520.learnhub.study.dto.StudyQuestionResponse;
-import com.github.comui520.learnhub.study.dto.StudyQuestionView;
-import com.github.comui520.learnhub.study.dto.SubmitStudyAnswerRequest;
+import com.github.comui520.learnhub.study.dto.*;
 import com.github.comui520.learnhub.study.service.StudyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -71,5 +64,55 @@ public class StudyController {
             @PathVariable Long knowledgeBaseId
     ) {
         return ApiResponse.success(studyService.generateQuestion(request, knowledgeBaseId));
+    }
+
+    @PostMapping("question/{knowledgeBaseId}/page")
+    @ApiResponses(
+            {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "获取成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "知识库不存在（STUDY_0001）")
+            }
+    )
+    public ApiResponse<IPage<StudyQuestionView>> getQuestionViewPage(
+            @RequestBody @Valid QuestionViewPageRequest request
+            ) {
+        return ApiResponse.success(studyService.getQuestionViews(request));
+    }
+
+
+    @Operation(summary = "获取题目详情", description = "获取当前登录用户拥有的题目详情，包括正确答案")
+    @GetMapping("question/{questionId}/detail")
+    @ApiResponses(
+            {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "获取成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "题目不存在（STUDY_0001）")
+            }
+    )
+    public ApiResponse<QuestionDetail> getQuestionDetail(
+            @PathVariable Long questionId
+    ) {
+        return ApiResponse.success(studyService.getQuestionDetail(questionId));
+    }
+
+    @Operation(summary = "删除题目", description = "删除当前登录用户拥有的题目")
+    @ApiResponses(
+            {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "删除成功"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "未登录（COMMON_0401）"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "题目不存在（STUDY_0001）")
+            }
+    )
+    @DeleteMapping("/question/{questionId}")
+    public ApiResponse<Void> deleteQuestion(@PathVariable Long questionId) {
+        studyService.deleteQuestion(questionId);
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/questions")
+    public ApiResponse<Void> deleteQuestionBatch(@RequestBody @Valid DeleteQuestionBatchRequest request) {
+        studyService.deleteQuestionBatch(request.ids());
+        return ApiResponse.success();
     }
 }
