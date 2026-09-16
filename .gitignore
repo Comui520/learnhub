@@ -34,3 +34,6 @@
 .DS_Store
 Thumbs.db
 *.swp
+
+# Local browser validation artifacts
+.playwright-cli/
