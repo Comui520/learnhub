@@ -1,0 +1,88 @@
+server:
+  port: 8080
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: learnhub
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:learnhub}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER}
+    password: ${MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_DEFAULT_USER}
+    password: ${RABBITMQ_DEFAULT_PASS}
+  ai:
+    openai:
+      api-key: ${API_KEY}
+      base-url: ${BASE_URL:https://api.siliconflow.cn}
+      chat:
+        options:
+          model: ${CHAT_MODEL:deepseek-ai/DeepSeek-V4-Flash}
+      embedding:
+        options:
+          model: ${EMBEDDING_MODEL:BAAI/bge-m3}
+    vectorstore:
+      qdrant:
+        host: ${QDRANT_HOST:qdrant}
+        port: ${QDRANT_GRPC_PORT:6334}
+        collection-name: ${QDRANT_COLLECTION_NAME:learnhub_docs}
+        initialize-schema: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.github.comui520.learnhub: INFO
+
+learnhub:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: ${JWT_EXPIRATION:3600000}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+    public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ROOT_USER}
+    secret-key: ${MINIO_ROOT_PASSWORD}
+    bucket: ${MINIO_BUCKET:learnhub-docs}
+  redis:
+    kb:
+      kb-detail-key: "kb:detail:"
+      kb-df-key: "kb:df:"
+      kb-df-kb-key: "kb:df:kb:"
+    user:
+      us-lg-at-key: "us:lg:at:"
+      us-lg-fl-key: "us:lg:fl:"
+    ai:
+      ai-chat-key: "ai:chat:"
+    study:
+      std-qst-opt-key: "std:qst:opt:"
+      expire: 3600
+  login:
+    attempt:
+      max-failures: 5
+      lock-duration: 15m

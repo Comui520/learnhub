@@ -1,0 +1,9 @@
+.git
+.idea
+.vscode
+node_modules
+dist
+.playwright-cli
+*.log
+.env
+.env.*

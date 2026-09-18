@@ -7,15 +7,29 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Configuration
 public class MinioConfig {
 
     @Bean
+    @Primary
     public MinioClient minioClient(MinioProperties properties) {
         return MinioClient.builder()
                 .endpoint(properties.getEndpoint())
+                .credentials(properties.getAccessKey(), properties.getSecretKey())
+                .build();
+    }
+
+    @Bean("minioPresignClient")
+    public MinioClient minioPresignClient(MinioProperties properties) {
+        String endpoint = StringUtils.hasText(properties.getPublicEndpoint())
+                ? properties.getPublicEndpoint()
+                : properties.getEndpoint();
+        return MinioClient.builder()
+                .endpoint(endpoint)
                 .credentials(properties.getAccessKey(), properties.getSecretKey())
                 .build();
     }

@@ -101,6 +101,20 @@ LearnHub/
 └─ LICENSE                # MIT License
 ```
 
+## One-command Docker stack
+
+The repository root contains a full Compose stack for the frontend, backend, MySQL, Redis, RabbitMQ, MinIO, and Qdrant:
+
+```powershell
+Copy-Item .env.example .env
+# Replace passwords, JWT_SECRET, and API_KEY in .env
+docker compose up -d --build
+```
+
+Open `http://localhost:8088` after all services become healthy. See [`docs/docker-deployment.md`](docs/docker-deployment.md) for logs, updates, volumes, and single-server deployment guidance.
+
+On Windows, prepare the root `.env` once and double-click `start-demo.cmd` for a repeatable interview demo.
+
 ## Quick start
 
 > The following are **local development addresses**, not public links.

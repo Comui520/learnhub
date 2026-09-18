@@ -180,6 +180,30 @@ LearnHub/
 | API 与可观测性 | springdoc OpenAPI、Swagger UI、Actuator、SLF4J、滚动日志 |
 | 前端交互 | 原生 DOM 渲染、Hash 路由、Fetch、ReadableStream、响应式 CSS |
 
+## Docker 一键启动（推荐完整体验）
+
+仓库根目录现在提供完整的容器化运行方案，可一次启动前端、后端、MySQL、Redis、RabbitMQ、MinIO 和 Qdrant：
+
+```powershell
+Copy-Item .env.example .env
+# 编辑 .env，替换密码、JWT_SECRET 和 API_KEY
+docker compose up -d --build
+```
+
+启动完成后访问：
+
+```text
+LearnHub:    http://localhost:8088
+Swagger UI: http://localhost:8088/swagger-ui/index.html
+Health:     http://localhost:8088/actuator/health
+```
+
+完整说明、更新、日志、数据卷和单机服务器建议见 [`docs/docker-deployment.md`](docs/docker-deployment.md)。
+
+面试演示时，准备好根目录 `.env` 后可以直接双击 `start-demo.cmd`；它会检查 Docker、启动服务、等待健康检查通过并打开 `http://localhost:8088`。
+
+> Docker 启动不要求宿主机安装 Java、Maven、Node.js 或数据库。项目尚未附带公网域名和 HTTPS；公开部署时应额外配置反向代理、证书、备份与 Secret 管理。
+
 ## 本地运行
 
 > 本仓库目前没有公共部署地址。下列地址仅适用于你**在本机启动服务之后**，不是在线演示链接。

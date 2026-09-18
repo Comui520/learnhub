@@ -13,6 +13,10 @@
 
 > **重点说明：**完整的工程学习文档位于 [`../LearnHubBackend/docs/`](../LearnHubBackend/docs/)，按阶段记录如何从零构建这个项目。根目录的 `docs/` 还保存 README 使用的真实界面截图。
 
+## 部署与运行
+
+- [`docker-deployment.md`](docker-deployment.md)：使用 Docker Compose 一次启动前端、后端和全部基础设施，并说明日志、更新、数据卷与服务器部署注意事项。
+
 ## 推荐学习顺序
 
 | 顺序 | 内容 | 入口 |

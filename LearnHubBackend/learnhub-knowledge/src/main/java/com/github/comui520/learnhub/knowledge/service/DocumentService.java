@@ -29,6 +29,7 @@ import io.minio.RemoveObjectArgs;
 import io.minio.errors.MinioException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,6 +53,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
     private final DocumentFileMapper documentFileMapper;
     private final KnowledgeBaseDocumentMapper knowledgeBaseDocumentMapper;
     private final MinioClient minioClient;
+    private final MinioClient minioPresignClient;
     private final MinioProperties minioProperties;
     private final RabbitTemplate rabbitTemplate;
     private final DocumentTaskMapper documentTaskMapper;
@@ -62,6 +64,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
             DocumentFileMapper documentFileMapper,
             KnowledgeBaseDocumentMapper knowledgeBaseDocumentMapper,
             MinioClient minioClient,
+            @Qualifier("minioPresignClient") MinioClient minioPresignClient,
             MinioProperties minioProperties,
             RabbitTemplate rabbitTemplate,
             DocumentTaskMapper documentTaskMapper,
@@ -71,6 +74,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
         this.documentFileMapper = documentFileMapper;
         this.knowledgeBaseDocumentMapper = knowledgeBaseDocumentMapper;
         this.minioClient = minioClient;
+        this.minioPresignClient = minioPresignClient;
         this.minioProperties = minioProperties;
         this.rabbitTemplate = rabbitTemplate;
         this.documentTaskMapper = documentTaskMapper;
@@ -146,7 +150,7 @@ public class DocumentService extends ServiceImpl<KnowledgeBaseDocumentMapper, Kn
 
     public String getDownloadUrl(DocumentFile file) throws MinioException {
         log.info("Generating presigned URL for file: {}, object name: {}", file.getId(), file.getObjectName());
-        return minioClient.getPresignedObjectUrl(
+        return minioPresignClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
                         .bucket(minioProperties.getBucket())
                         .object(file.getObjectName())
