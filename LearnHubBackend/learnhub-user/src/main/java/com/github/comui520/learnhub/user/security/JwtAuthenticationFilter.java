@@ -27,6 +27,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.userRoleMapper = userRoleMapper;
     }
 
+    /**
+     * Spring MVC SSE uses an async dispatch after the controller returns the stream.
+     * Re-parse the bearer token on that dispatch so the stateless security context
+     * is available while the stream is being written.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     @Override
     protected void doFilterInternal(
             jakarta.servlet.http.HttpServletRequest request,
