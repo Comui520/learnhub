@@ -193,14 +193,14 @@ docker compose up -d --build
 启动完成后访问：
 
 ```text
-LearnHub:    http://localhost:8088
-Swagger UI: http://localhost:8088/swagger-ui/index.html
-Health:     http://localhost:8088/actuator/health
+LearnHub:    http://127.0.0.1:8088
+Swagger UI: http://127.0.0.1:8088/swagger-ui/index.html
+Health:     http://127.0.0.1:8088/actuator/health
 ```
 
 完整说明、更新、日志、数据卷和单机服务器建议见 [`docs/docker-deployment.md`](docs/docker-deployment.md)。
 
-面试演示时，准备好根目录 `.env` 后可以直接双击 `start-demo.cmd`；它会检查 Docker、启动服务、等待健康检查通过并打开 `http://localhost:8088`。
+面试演示时，准备好根目录 `.env` 后可以直接双击 `start-demo.cmd`；它会检查 Docker、启动服务、等待健康检查通过并打开 `http://127.0.0.1:8088`。
 
 > Docker 启动不要求宿主机安装 Java、Maven、Node.js 或数据库。项目尚未附带公网域名和 HTTPS；公开部署时应额外配置反向代理、证书、备份与 Secret 管理。
 
@@ -263,6 +263,20 @@ Vite 会把 `/api`、`/v3`、`/swagger-ui`、`/actuator` 代理到本机后端 `
 cd D:\LearnHub\frontend
 npm run build
 ```
+
+## 本地性能基线
+
+项目已经加入可重复执行的 k6 基线脚本，位于 [`perf/k6/`](perf/k6/)，完整说明见 [`perf/README.md`](perf/README.md)，结果记录见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+
+在 **2026 年 9 月 19 日** 的 Windows + Docker Desktop / WSL2 环境中，使用 Docker k6、5 个虚拟用户、持续 10 秒，对非 AI 场景得到第一轮结果：
+
+| 场景 | 吞吐量 | p50 | p95 | p99 | HTTP 错误率 |
+|---|---:|---:|---:|---:|---:|
+| Health | 2,018.09 req/s | 1.87 ms | 4.32 ms | 7.47 ms | 0% |
+| Credit balance | 1,659.31 req/s | 2.27 ms | 5.41 ms | 8.46 ms | 0% |
+| Study library page | 906.91 req/s | 4.22 ms | 9.66 ms | 15.06 ms | 0% |
+
+这些数字是当前本地演示数据和 Docker 单机环境下的**工程基线**，不是公网生产容量承诺；Chat、AI 出题、上传解析和额度扣减属于有外部成本或会修改数据的专项测试，未放入第一轮无副作用压测。
 
 ## API 与 SSE 约定
 

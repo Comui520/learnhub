@@ -54,7 +54,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [LearnHub] Ready: http://localhost:8088
-start "" "http://localhost:8088"
+echo [LearnHub] Ready: http://127.0.0.1:8088
+start "" "http://127.0.0.1:8088"
 docker compose ps
 exit /b 0

@@ -16,6 +16,7 @@
 ## 部署与运行
 
 - [`docker-deployment.md`](docker-deployment.md)：使用 Docker Compose 一次启动前端、后端和全部基础设施，并说明日志、更新、数据卷与服务器部署注意事项。
+- [`../perf/README.md`](../perf/README.md)：使用 k6 执行安全的 HTTP 基线压测；结果记录在 [`performance/baseline.md`](performance/baseline.md)。
 
 ## 推荐学习顺序
 

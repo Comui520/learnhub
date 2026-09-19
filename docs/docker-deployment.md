@@ -70,9 +70,9 @@ docker compose logs -f backend
 默认访问地址：
 
 ```text
-LearnHub:    http://localhost:8088
-Swagger UI: http://localhost:8088/swagger-ui/index.html
-Health:     http://localhost:8088/actuator/health
+LearnHub:    http://127.0.0.1:8088
+Swagger UI: http://127.0.0.1:8088/swagger-ui/index.html
+Health:     http://127.0.0.1:8088/actuator/health
 ```
 
 这些地址是本地运行地址。部署到服务器时，将 `localhost` 换成服务器域名或 IP，并通过云防火墙开放 `APP_PORT`。
@@ -85,11 +85,11 @@ Compose 不公开 MySQL、Redis、RabbitMQ AMQP 或 Qdrant 端口。MinIO API、
 
 ```text
 RabbitMQ: http://localhost:15672
-MinIO API:     http://localhost:9000
+MinIO API:     http://127.0.0.1:9000
 MinIO Console: http://localhost:9001
 ```
 
-文档分享链接由 `MINIO_PUBLIC_ENDPOINT` 生成。本机运行保持 `http://localhost:9000` 即可；部署到远程服务器时，应把它改成浏览器能够访问的 MinIO 域名或服务器地址，并相应配置 `MINIO_BIND_ADDRESS` 或外层反向代理。
+文档分享链接由 `MINIO_PUBLIC_ENDPOINT` 生成。本机运行保持 `http://127.0.0.1:9000` 即可；部署到远程服务器时，应把它改成浏览器能够访问的 MinIO 域名或服务器地址，并相应配置 `MINIO_BIND_ADDRESS` 或外层反向代理。
 
 ## 常用操作
 

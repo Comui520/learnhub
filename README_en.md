@@ -111,7 +111,7 @@ Copy-Item .env.example .env
 docker compose up -d --build
 ```
 
-Open `http://localhost:8088` after all services become healthy. See [`docs/docker-deployment.md`](docs/docker-deployment.md) for logs, updates, volumes, and single-server deployment guidance.
+Open `http://127.0.0.1:8088` after all services become healthy. See [`docs/docker-deployment.md`](docs/docker-deployment.md) for logs, updates, volumes, and single-server deployment guidance.
 
 On Windows, prepare the root `.env` once and double-click `start-demo.cmd` for a repeatable interview demo.
 
@@ -165,6 +165,12 @@ http://127.0.0.1:5173/
 cd D:\LearnHub\frontend
 npm run build
 ```
+
+## Local performance baseline
+
+The repository includes reproducible k6 scripts under [`perf/k6/`](perf/k6/). A first local baseline on September 19, 2026 used Docker k6, 5 virtual users, and a 10-second run: Health reached 2,018.09 req/s at p95 4.32 ms; credit balance reached 1,659.31 req/s at p95 5.41 ms; study-library pagination reached 906.91 req/s at p95 9.66 ms. All three non-AI scenarios had a 0% HTTP error rate.
+
+These are local Docker baseline measurements, not production capacity claims. See [`docs/performance/baseline.md`](docs/performance/baseline.md) for the environment and limitations.
 
 ## License
 
