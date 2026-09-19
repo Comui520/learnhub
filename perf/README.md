@@ -46,6 +46,21 @@ docker run --rm -i --network learnhub_learnhub `
   grafana/k6 run /scripts/credit-balance.js
 ```
 
+## 当前脚本覆盖范围
+
+| 脚本 | 类型 | 是否默认安全 | 覆盖内容 |
+|---|---|---|---|
+| `health.js` | 纯读取 | 是 | Actuator 健康检查 |
+| `auth-login.js` | 认证读取 / 写入登录日志 | 是，默认仅 20 次 | 登录、JWT 生成、登录限制链路 |
+| `credit-balance.js` | 读取 | 是 | JWT、Redis / 数据库额度查询 |
+| `read-journey.js` | 混合读取 | 是 | 用户信息、额度、知识库、文档、任务、题库分页、题目详情 |
+| `study-library.js` | 读取 | 是 | Study 题库分页 |
+| `document-upload-smoke.js` | 写入 | 否 | 单次文档上传冒烟测试，会产生测试文档 |
+| `credit-idempotency.js` | 写入 | 否 | 创建订单并重复发送 5 次支付回调，会改变测试账号额度 |
+| `chat-sse.js` | 外部 AI | 否 | 一次真实 SSE Chat，会消耗额度并调用模型供应商 |
+
+`read-journey.js` 是最适合面试展示的综合读取场景；它不是单接口 QPS，而是模拟一次登录用户打开工作台后连续读取多个模块。
+
 ## 第一轮安全范围
 
 第一轮只测：
@@ -65,6 +80,21 @@ docker run --rm -i --network learnhub_learnhub `
 - 支付回调。
 
 这些接口会产生外部 API 成本、异步任务、数据库写入或业务数据污染，应单独准备测试账号、测试知识库和清理方案。
+
+## 推荐执行顺序
+
+```text
+1. health.js
+2. auth-login.js
+3. credit-balance.js
+4. study-library.js
+5. read-journey.js
+6. document-upload-smoke.js（准备测试数据后）
+7. credit-idempotency.js（准备测试账号和 SQL 校验后）
+8. chat-sse.js（确认模型费用和额度后）
+```
+
+前 5 个脚本不会调用大模型，也不会主动写入知识库、题目或订单；后 3 个脚本必须人工确认影响范围后再执行。
 
 ## 需要记录的指标
 
