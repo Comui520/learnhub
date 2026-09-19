@@ -278,6 +278,8 @@ npm run build
 
 这些数字是当前本地演示数据和 Docker 单机环境下的**工程基线**，不是公网生产容量承诺；Chat、AI 出题、上传解析和额度扣减属于有外部成本或会修改数据的专项测试，未放入第一轮无副作用压测。
 
+AI 专项测试也进行了低规模验证：当前使用 `deepseek-ai/DeepSeek-V4-Flash` 时，单次 Chat SSE p95 为 11.67 秒；3 VU、20 秒的同账号测试中，10 次请求成功，其余请求被后端配置的“5 次 / 10 秒 / 用户”限流规则拒绝。此前尝试的 `Qwen/Qwen3.5-4B` 在当前配置下单次 Chat 超过 60 秒未完成，因此没有继续加压。完整过程见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+
 ## API 与 SSE 约定
 
 普通 REST 接口使用统一包装：

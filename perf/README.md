@@ -58,6 +58,7 @@ docker run --rm -i --network learnhub_learnhub `
 | `document-upload-smoke.js` | 写入 | 否 | 单次文档上传冒烟测试，会产生测试文档 |
 | `credit-idempotency.js` | 写入 | 否 | 创建订单并重复发送 5 次支付回调，会改变测试账号额度 |
 | `chat-sse.js` | 外部 AI | 否 | 一次真实 SSE Chat，会消耗额度并调用模型供应商 |
+| `chat-load.js` | 外部 AI / 限流 | 否 | 多 VU Chat 阶梯测试；同一用户会触发 5 次 / 10 秒限流 |
 | `study-generate-once.js` | 外部 AI | 否 | 只生成 1 道单选题，会调用模型并落库 |
 
 `read-journey.js` 是最适合面试展示的综合读取场景；它不是单接口 QPS，而是模拟一次登录用户打开工作台后连续读取多个模块。
