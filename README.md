@@ -280,6 +280,8 @@ npm run build
 
 AI 专项测试也进行了低规模验证：当前使用 `deepseek-ai/DeepSeek-V4-Flash` 时，单次 Chat SSE p95 为 11.67 秒；3 VU、20 秒的同账号测试中，10 次请求成功，其余请求被后端配置的“5 次 / 10 秒 / 用户”限流规则拒绝。此前尝试的 `Qwen/Qwen3.5-4B` 在当前配置下单次 Chat 超过 60 秒未完成，因此没有继续加压。完整过程见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
 
+随后创建 8 个独立测试用户和独立知识库，使用 8 VU 对 DeepSeek Chat 进行 60 秒多用户测试：98 次 Chat 成功，成功请求 p95 为 12.54 秒；失败请求主要是每用户 5 次 / 10 秒限流，成功请求错误率为 0%。完整结果和额度核对见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+
 ## API 与 SSE 约定
 
 普通 REST 接口使用统一包装：
