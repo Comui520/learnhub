@@ -264,23 +264,73 @@ cd D:\LearnHub\frontend
 npm run build
 ```
 
-## 本地性能基线
+## 本地性能与压测结果
 
-项目已经加入可重复执行的 k6 基线脚本，位于 [`perf/k6/`](perf/k6/)，完整说明见 [`perf/README.md`](perf/README.md)，结果记录见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+项目提供了一套可重复执行的 k6 测试脚本，位于 [`perf/k6/`](perf/k6/)，执行说明见 [`perf/README.md`](perf/README.md)，完整报告见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
 
-在 **2026 年 9 月 19 日** 的 Windows + Docker Desktop / WSL2 环境中，使用 Docker k6、5 个虚拟用户、持续 10 秒，对非 AI 场景得到第一轮结果：
+> 以下结果来自 **2026 年 9 月 19 日** 的 Windows + Docker Desktop / WSL2 环境。压测入口为 Docker 网络中的 `frontend` 服务，包含 Nginx 和 Spring Boot，不包含宿主机端口转发耗时。它们是本地工程基线，不是公网生产容量承诺。
 
-| 场景 | 吞吐量 | p50 | p95 | p99 | HTTP 错误率 |
-|---|---:|---:|---:|---:|---:|
-| Health | 2,018.09 req/s | 1.87 ms | 4.32 ms | 7.47 ms | 0% |
-| Credit balance | 1,659.31 req/s | 2.27 ms | 5.41 ms | 8.46 ms | 0% |
-| Study library page | 906.91 req/s | 4.22 ms | 9.66 ms | 15.06 ms | 0% |
+### 1. 基础接口性能
 
-这些数字是当前本地演示数据和 Docker 单机环境下的**工程基线**，不是公网生产容量承诺；Chat、AI 出题、上传解析和额度扣减属于有外部成本或会修改数据的专项测试，未放入第一轮无副作用压测。
+| 场景 | 并发 / 时长 | 请求数 | 吞吐量 | 错误率 | p50 | p95 | p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Health | 5 VU / 10s | 20,184 | 2,018.09 req/s | 0% | 1.87 ms | 4.32 ms | 7.47 ms |
+| Credit balance | 5 VU / 10s | 17,045* | 1,659.31 req/s* | 0% | 2.27 ms | 5.41 ms | 8.46 ms |
+| Study library page | 5 VU / 10s | 9,149* | 906.91 req/s* | 0% | 4.22 ms | 9.66 ms | 15.06 ms |
+| Auth login | 2 VU / 20 次 | 20 | 29.32 req/s | 0% | 66.84 ms | 72.33 ms | 72.58 ms |
+| Read journey（7 个读取接口 / 迭代） | 5 VU / 5s | 6,672 | 1,313.15 req/s | 0% | 3.23 ms | 7.18 ms | 10.01 ms |
 
-AI 专项测试也进行了低规模验证：当前使用 `deepseek-ai/DeepSeek-V4-Flash` 时，单次 Chat SSE p95 为 11.67 秒；3 VU、20 秒的同账号测试中，10 次请求成功，其余请求被后端配置的“5 次 / 10 秒 / 用户”限流规则拒绝。此前尝试的 `Qwen/Qwen3.5-4B` 在当前配置下单次 Chat 超过 60 秒未完成，因此没有继续加压。完整过程见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+\* Credit / Study 脚本的请求总数包含 1 次 setup 登录请求。
 
-随后创建 8 个独立测试用户和独立知识库，使用 8 VU 对 DeepSeek Chat 进行 60 秒多用户测试：98 次 Chat 成功，成功请求 p95 为 12.54 秒；失败请求主要是每用户 5 次 / 10 秒限流，成功请求错误率为 0%。完整结果和额度核对见 [`docs/performance/baseline.md`](docs/performance/baseline.md)。
+### 2. 写入、异步和幂等专项
+
+| 场景 | 测试规模 | 结果 | 延迟 / 结论 |
+|---|---:|---|---:|
+| 文档上传 | 1 个小 Markdown | HTTP 200，测试文档随后删除 | p95 79.87 ms |
+| 文档异步解析 | 8 个用户、8 份测试文档 | 8 个解析任务全部成功 | 异步任务状态均为 SUCCESS |
+| AI 生成单选题 | 1 道 | HTTP 200，题目 ID 为 6 并成功落库 | p95 5.94 s |
+| 支付回调幂等 | 同一订单 5 次回调 | 全部 HTTP 200，数据库仅 1 条 `GRANT` 流水 | p95 63.64 ms |
+
+### 3. AI Chat SSE 专项
+
+| 模型 / 场景 | 并发 | 结果 | 指标 |
+|---|---:|---|---:|
+| `Qwen/Qwen3.5-4B` | 1 次 | 超时 | 超过 60 秒未完成，停止继续测试 |
+| `deepseek-ai/DeepSeek-V4-Flash` | 1 次 | 成功，HTTP 200，SSE 完整 | p95 11.67 s，错误率 0% |
+| DeepSeek，同一用户 | 3 VU / 20s | 10 次成功，约 5,011 次被限流 | 验证 `5 次 / 10 秒 / 用户` 限流 |
+| DeepSeek，多用户 | 8 VU / 60s | 98 次成功，5,664 次被限流或拒绝 | 成功 Chat p95 12.54 s，最大耗时 56.62 s |
+
+多用户测试准备了 8 个独立账号、8 个独立知识库和 8 份已经完成向量化的测试文档。每个账号充值 20 个模拟 credits，总额度从 160 降至 62，正好对应 98 次成功 Chat 扣减。
+
+失败请求主要是每个用户的限流响应，没有继续消耗额度；成功进入模型的 Chat 请求错误率为 0%。这说明 SSE 链路和多用户知识库隔离正常，同时也说明当前瓶颈主要是模型响应时间和用户级限流，而不是基础 CRUD 或 Nginx。
+
+### 4. Docker 资源快照
+
+测试结束时记录到的一次资源快照如下。它不是峰值监控，只用于展示本地运行成本：
+
+| 容器 | CPU | 内存 |
+|---|---:|---:|
+| backend | 14.55% | 682.1 MiB |
+| frontend | 0.00% | 18.15 MiB |
+| mysql | 0.69% | 446.6 MiB |
+| redis | 1.01% | 6.9 MiB |
+| rabbitmq | 0.26% | 109.9 MiB |
+| minio | 1.94% | 234.7 MiB |
+| qdrant | 0.39% | 97.7 MiB |
+
+### 5. 一次真实问题与修复
+
+首次 Chat SSE 测试时发现：请求已经进入 Controller，但 Spring MVC 异步 dispatch 阶段 JWT `SecurityContext` 丢失，导致：
+
+```text
+AuthorizationDeniedException
+upstream prematurely closed connection
+unexpected EOF
+```
+
+最终在 `JwtAuthenticationFilter` 中允许异步 dispatch 重新解析 Bearer Token，修复后 Chat SSE 恢复正常。这次问题定位和修复本身也是本项目压测的重要产出，而不是只记录几个延迟数字。
+
+> 注意：Chat 在建立流之前会先扣 1 credit，因此上游模型超时也可能产生额度消耗。当前充值只是模拟订单和回调，不涉及真实支付；具体策略见完整性能报告。
 
 ## API 与 SSE 约定
 
